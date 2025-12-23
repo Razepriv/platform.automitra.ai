@@ -1,11 +1,4 @@
-    async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
-      const [contact] = await db.insert(contacts).values(contactData).returning();
-      return contact;
-    }
-  async getContacts(organizationId: string) {
-    // List all contacts for an organization
-    return await db.select().from(contacts).where(eq(contacts.organizationId, organizationId));
-  }
+// ...existing code...
 // Reference: javascript_log_in_with_replit and javascript_database integrations
 import {
   users,
@@ -141,6 +134,16 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+    // Contact operations
+    async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
+      const [contact] = await db.insert(contacts).values(contactData).returning();
+      return contact;
+    }
+
+    async getContacts(organizationId: string) {
+      // List all contacts for an organization
+      return await db.select().from(contacts).where(eq(contacts.organizationId, organizationId));
+    }
   // User operations
   async getUser(id: string, organizationId?: string): Promise<User | undefined> {
     if (organizationId) {
