@@ -138,7 +138,7 @@ export function AppSidebar() {
                   </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-semibold">
-                      {organization?.companyName || "Megna Voice"}
+                      {organization?.companyName || "auto mitra ai"}
                     </span>
                     <span className="truncate text-xs">Enterprise</span>
                   </div>
@@ -158,7 +158,7 @@ export function AppSidebar() {
                   <div className="flex size-6 items-center justify-center rounded-sm border">
                     <Command className="size-4" />
                   </div>
-                  {organization?.companyName || "Megna Voice"}
+                  {organization?.companyName || "auto mitra ai"}
                   <DropdownMenuItem className="ml-auto h-4 w-4" />
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

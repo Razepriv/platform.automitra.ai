@@ -44,7 +44,7 @@ export default function Landing() {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
                 <Sparkles className="w-6 h-6 text-white" />
               </div>
-              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">Megna Voice</span>
+              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">auto mitra ai</span>
             </div>
 
             {/* Desktop Menu */}
@@ -361,7 +361,7 @@ export default function Landing() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <span className="text-lg font-bold text-white">Megna Voice</span>
+            <span className="text-lg font-bold text-white">auto mitra ai</span>
           </div>
           
           <div className="flex gap-8 text-sm text-gray-400">
@@ -371,7 +371,7 @@ export default function Landing() {
           </div>
 
           <div className="text-sm text-gray-500">
-            &copy; 2025 Megna Voice. All rights reserved.
+            &copy; 2025 auto mitra ai. All rights reserved.
           </div>
         </div>
       </footer>
