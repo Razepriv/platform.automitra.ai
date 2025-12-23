@@ -39,12 +39,11 @@ import {
   type InsertCampaign,
   type ChannelPartner,
   type InsertChannelPartner,
-} from "@shared/schema";
-import { contacts, campaignContacts } from "@shared/contacts-schema";
   type Visit,
   type InsertVisit,
   type Organization,
 } from "@shared/schema";
+import { contacts, campaignContacts } from "@shared/contacts-schema";
 import { db } from "./db";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 
