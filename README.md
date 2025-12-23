@@ -1,3 +1,43 @@
+## Hostinger Deployment
+
+To deploy on Hostinger Node.js hosting:
+
+1. **Build the Project**
+  ```bash
+  npm install
+  npm run build
+  ```
+
+2. **Set Entry File in Hostinger**
+  - In Hostinger's Node.js app settings, set the entry file to:
+    ```
+    dist/index.js
+    ```
+
+3. **Serve Frontend from Express**
+  - Ensure your Express server (in dist/index.js) includes:
+    ```js
+    import express from 'express';
+    import path from 'path';
+    const app = express();
+
+    app.use(express.static(path.join(__dirname, 'public')));
+    app.get('*', (req, res) => {
+     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+     console.log(`Server running on port ${PORT}`);
+    });
+    ```
+
+4. **Set Environment Variables**
+  - Add your environment variables in Hostinger's panel or upload a `.env` file.
+
+5. **Deploy/Restart**
+  - Deploy or restart your app from the Hostinger panel.
+
 # Megna Voice - AI Voice Agent Platform
 
 > A comprehensive AI-powered voice agent platform for automated calling, lead management, and intelligent customer interactions.
