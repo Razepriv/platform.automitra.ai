@@ -134,6 +134,11 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
     // Contact operations
+
+    // Phone Number operations
+    async getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]> {
+      return await db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, organizationId));
+    }
     async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
       const [contact] = await db.insert(contacts).values(contactData).returning();
       return contact;

@@ -38,8 +38,10 @@ function UnauthenticatedRouter() {
       <Route path="/signup">
         <Auth mode="signup" />
       </Route>
-      <Route path="/" component={Landing} />
-      <Route component={Landing} />
+      <Route path="/">
+        <Auth mode="login" />
+      </Route>
+      <Route component={Auth} />
     </Switch>
   );
 }
