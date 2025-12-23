@@ -1,9 +1,9 @@
 // Utility for converting files to PDF
 // Supports: .txt, .doc, .docx
 
-const PDFDocument = require('pdfkit');
-const mammoth = require('mammoth');
-const stream = require('stream');
+import PDFDocument from 'pdfkit';
+import mammoth from 'mammoth';
+import stream from 'stream';
 
 /**
  * Convert a text file buffer to PDF buffer
@@ -42,4 +42,4 @@ async function docxToPdfBuffer(buffer) {
   });
 }
 
-module.exports = { textToPdfBuffer, docxToPdfBuffer };
+export { textToPdfBuffer, docxToPdfBuffer };
