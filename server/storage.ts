@@ -64,25 +64,25 @@ export interface IStorage {
   createCampaign(campaign: InsertCampaign): Promise<Campaign>;
   updateCampaign(id: string, organizationId: string, campaign: Partial<InsertCampaign>): Promise<Campaign | undefined>;
   deleteCampaign(id: string, organizationId: string): Promise<boolean>;
-  addContactToCampaign(campaignId: string, contactId: string): Promise<boolean>;
-  addContactToGlobalList(campaignId: string, contactId: string): Promise<boolean>;
-
-  // AI Agent operations (tenant-safe types - never accept organizationId from client)
-  getAIAgents(organizationId: string): Promise<AiAgent[]>;
-  getAIAgent(id: string, organizationId: string): Promise<AiAgent | undefined>;
   createAIAgent(agent: InsertAiAgent): Promise<AiAgent>;
   updateAIAgent(id: string, organizationId: string, agent: UpdateAiAgentInput): Promise<AiAgent | undefined>;
   deleteAIAgent(id: string, organizationId: string): Promise<boolean>;
-
-  // Phone Number operations
-  getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]>;
   getPhoneNumber(id: string, organizationId: string): Promise<PhoneNumber | undefined>;
   createPhoneNumber(phone: InsertPhoneNumber): Promise<PhoneNumber>;
   updatePhoneNumber(id: string, organizationId: string, phone: Partial<InsertPhoneNumber>): Promise<PhoneNumber | undefined>;
-
-  // Lead operations
   getLeads(organizationId: string): Promise<Lead[]>;
   getLead(id: string, organizationId: string): Promise<Lead | undefined>;
+  createLead(lead: InsertLead): Promise<Lead>;
+  createLeadsBulk(leads: InsertLead[], organizationId: string): Promise<Lead[]>;
+  updateLead(id: string, organizationId: string, lead: Partial<InsertLead>): Promise<Lead | undefined>;
+  getLeadsByAgent(agentId: string, organizationId: string): Promise<Lead[]>;
+  getCalls(organizationId: string): Promise<Call[]>;
+  getCallsByAgent(agentId: string, organizationId: string): Promise<Call[]>;
+  getCall(id: string, organizationId: string): Promise<Call | undefined>;
+  getCallByBolnaCallId(bolnaCallId: string): Promise<Call | undefined>;
+  getCallByExotelSid(exotelSid: string): Promise<Call | undefined>;
+  createCall(call: InsertCall): Promise<Call>;
+  updateCall(id: string, organizationId: string, call: Partial<InsertCall>): Promise<Call | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;
   createLeadsBulk(leads: InsertLead[], organizationId: string): Promise<Lead[]>;
   updateLead(id: string, organizationId: string, lead: Partial<InsertLead>): Promise<Lead | undefined>;
@@ -133,6 +133,103 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // AI Agent operations
+  async createAIAgent(agent: InsertAiAgent): Promise<AiAgent> {
+    const [created] = await db.insert(aiAgents).values(agent).returning();
+    return created;
+  }
+  async updateAIAgent(id: string, organizationId: string, agent: UpdateAiAgentInput): Promise<AiAgent | undefined> {
+    const [updated] = await db.update(aiAgents)
+      .set({ ...agent, updatedAt: new Date() })
+      .where(and(eq(aiAgents.id, id), eq(aiAgents.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
+  async deleteAIAgent(id: string, organizationId: string): Promise<boolean> {
+    const result = await db.delete(aiAgents)
+      .where(and(eq(aiAgents.id, id), eq(aiAgents.organizationId, organizationId)))
+      .returning();
+    return result.length > 0;
+  }
+  // Phone Number operations
+  async getPhoneNumber(id: string, organizationId: string): Promise<PhoneNumber | undefined> {
+    const [phone] = await db.select().from(phoneNumbers)
+      .where(and(eq(phoneNumbers.id, id), eq(phoneNumbers.organizationId, organizationId)));
+    return phone || undefined;
+  }
+  async createPhoneNumber(phone: InsertPhoneNumber): Promise<PhoneNumber> {
+    const [created] = await db.insert(phoneNumbers).values(phone).returning();
+    return created;
+  }
+  async updatePhoneNumber(id: string, organizationId: string, phone: Partial<InsertPhoneNumber>): Promise<PhoneNumber | undefined> {
+    const [updated] = await db.update(phoneNumbers)
+      .set({ ...phone, updatedAt: new Date() })
+      .where(and(eq(phoneNumbers.id, id), eq(phoneNumbers.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
+  // Lead operations
+  async getLeads(organizationId: string): Promise<Lead[]> {
+    return await db.select().from(leads).where(eq(leads.organizationId, organizationId));
+  }
+  async getLead(id: string, organizationId: string): Promise<Lead | undefined> {
+    const [lead] = await db.select().from(leads)
+      .where(and(eq(leads.id, id), eq(leads.organizationId, organizationId)));
+    return lead || undefined;
+  }
+  async createLead(lead: InsertLead): Promise<Lead> {
+    const [created] = await db.insert(leads).values(lead).returning();
+    return created;
+  }
+  async createLeadsBulk(leadsArr: InsertLead[], organizationId: string): Promise<Lead[]> {
+    const created = await db.insert(leads).values(leadsArr.map(l => ({ ...l, organizationId }))).returning();
+    return created;
+  }
+  async updateLead(id: string, organizationId: string, lead: Partial<InsertLead>): Promise<Lead | undefined> {
+    const [updated] = await db.update(leads)
+      .set({ ...lead, updatedAt: new Date() })
+      .where(and(eq(leads.id, id), eq(leads.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
+  async getLeadsByAgent(agentId: string, organizationId: string): Promise<Lead[]> {
+    return await db.select().from(leads)
+      .where(and(eq(leads.assignedAgentId, agentId), eq(leads.organizationId, organizationId)));
+  }
+  // Call operations
+  async getCalls(organizationId: string): Promise<Call[]> {
+    return await db.select().from(calls).where(eq(calls.organizationId, organizationId));
+  }
+  async getCallsByAgent(agentId: string, organizationId: string): Promise<Call[]> {
+    return await db.select().from(calls)
+      .where(and(eq(calls.agentId, agentId), eq(calls.organizationId, organizationId)));
+  }
+  async getCall(id: string, organizationId: string): Promise<Call | undefined> {
+    const [call] = await db.select().from(calls)
+      .where(and(eq(calls.id, id), eq(calls.organizationId, organizationId)));
+    return call || undefined;
+  }
+  async getCallByBolnaCallId(bolnaCallId: string): Promise<Call | undefined> {
+    const [call] = await db.select().from(calls)
+      .where(eq(calls.bolnaCallId, bolnaCallId));
+    return call || undefined;
+  }
+  async getCallByExotelSid(exotelSid: string): Promise<Call | undefined> {
+    const [call] = await db.select().from(calls)
+      .where(eq(calls.exotelCallSid, exotelSid));
+    return call || undefined;
+  }
+  async createCall(call: InsertCall): Promise<Call> {
+    const [created] = await db.insert(calls).values(call).returning();
+    return created;
+  }
+  async updateCall(id: string, organizationId: string, call: Partial<InsertCall>): Promise<Call | undefined> {
+    const [updated] = await db.update(calls)
+      .set({ ...call, updatedAt: new Date() })
+      .where(and(eq(calls.id, id), eq(calls.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
     // Contact operations
 
     // Phone Number operations
@@ -287,30 +384,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- STUBS for missing IStorage methods ---
-  async createAIAgent(agent: InsertAiAgent): Promise<AiAgent> { throw new Error('Not implemented'); }
-  async updateAIAgent(id: string, organizationId: string, agent: UpdateAiAgentInput): Promise<AiAgent | undefined> { throw new Error('Not implemented'); }
-  async deleteAIAgent(id: string, organizationId: string): Promise<boolean> { throw new Error('Not implemented'); }
-  async getPhoneNumber(id: string, organizationId: string): Promise<PhoneNumber | undefined> { throw new Error('Not implemented'); }
-  async createPhoneNumber(phone: InsertPhoneNumber): Promise<PhoneNumber> { throw new Error('Not implemented'); }
-  async updatePhoneNumber(id: string, organizationId: string, phone: Partial<InsertPhoneNumber>): Promise<PhoneNumber | undefined> { throw new Error('Not implemented'); }
-  async getLeads(organizationId: string): Promise<Lead[]> { throw new Error('Not implemented'); }
-  async getLead(id: string, organizationId: string): Promise<Lead | undefined> { throw new Error('Not implemented'); }
-  async createLead(lead: InsertLead): Promise<Lead> { throw new Error('Not implemented'); }
-  async createLeadsBulk(leads: InsertLead[], organizationId: string): Promise<Lead[]> { throw new Error('Not implemented'); }
-  async updateLead(id: string, organizationId: string, lead: Partial<InsertLead>): Promise<Lead | undefined> { throw new Error('Not implemented'); }
-  async getLeadsByAgent(agentId: string, organizationId: string): Promise<Lead[]> { throw new Error('Not implemented'); }
   async getChannelPartners(organizationId: string): Promise<ChannelPartner[]> { throw new Error('Not implemented'); }
   async getChannelPartner(id: string, organizationId: string): Promise<ChannelPartner | undefined> { throw new Error('Not implemented'); }
   async createChannelPartner(partner: InsertChannelPartner): Promise<ChannelPartner> { throw new Error('Not implemented'); }
   async createChannelPartnersBulk(partners: InsertChannelPartner[], organizationId: string): Promise<ChannelPartner[]> { throw new Error('Not implemented'); }
   async updateChannelPartner(id: string, organizationId: string, partner: Partial<InsertChannelPartner>): Promise<ChannelPartner | undefined> { throw new Error('Not implemented'); }
-  async getCalls(organizationId: string): Promise<Call[]> { throw new Error('Not implemented'); }
-  async getCallsByAgent(agentId: string, organizationId: string): Promise<Call[]> { throw new Error('Not implemented'); }
-  async getCall(id: string, organizationId: string): Promise<Call | undefined> { throw new Error('Not implemented'); }
-  async getCallByBolnaCallId(bolnaCallId: string): Promise<Call | undefined> { throw new Error('Not implemented'); }
-  async getCallByExotelSid(exotelSid: string): Promise<Call | undefined> { throw new Error('Not implemented'); }
-  async createCall(call: InsertCall): Promise<Call> { throw new Error('Not implemented'); }
-  async updateCall(id: string, organizationId: string, call: Partial<InsertCall>): Promise<Call | undefined> { throw new Error('Not implemented'); }
   async getVisits(organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
   async getVisitsByManager(managerId: string, organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
   async createVisit(visit: InsertVisit): Promise<Visit> { throw new Error('Not implemented'); }

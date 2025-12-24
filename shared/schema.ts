@@ -1,3 +1,26 @@
+// Agent Templates table - stores reusable agent configurations
+export const agentTemplates = pgTable("agent_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  config: jsonb("config"), // Store template config as JSON
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_agent_templates_org").on(table.organizationId),
+  index("idx_agent_templates_created_by").on(table.createdBy),
+]);
+
+export const insertAgentTemplateSchema = createInsertSchema(agentTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentTemplate = z.infer<typeof insertAgentTemplateSchema>;
+export type AgentTemplate = typeof agentTemplates.$inferSelect;
 import { sql } from 'drizzle-orm';
 import {
   index,
