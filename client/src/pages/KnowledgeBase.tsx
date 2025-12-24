@@ -62,7 +62,8 @@ type KnowledgeEditValues = z.infer<typeof editFormSchema>;
 export default function KnowledgeBase() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'create'|'edit'>('create');
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<KnowledgeBaseType | null>(null);
   const [itemToDelete, setItemToDelete] = useState<KnowledgeBaseType | null>(null);
@@ -74,8 +75,8 @@ export default function KnowledgeBase() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'create') {
-      setIsCreateDialogOpen(true);
-      // Clean URL: remove action param while preserving base path
+      setDialogMode('create');
+      setIsDialogOpen(true);
       params.delete('action');
       const newUrl = params.toString() ? 
         `${window.location.pathname}?${params.toString()}` : 
@@ -129,7 +130,7 @@ export default function KnowledgeBase() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/knowledge-base"] });
-      setIsCreateDialogOpen(false);
+      setIsDialogOpen(false);
       createForm.reset();
       setTagInput("");
       toast({
@@ -199,7 +200,8 @@ export default function KnowledgeBase() {
   const handleOpenCreateDialog = () => {
     createForm.reset();
     setTagInput("");
-    setIsCreateDialogOpen(true);
+    setDialogMode('create');
+    setIsDialogOpen(true);
   };
 
   const handleOpenEditDialog = (item: KnowledgeBaseType) => {
@@ -395,7 +397,7 @@ export default function KnowledgeBase() {
       )}
 
       {/* Create Dialog with react-hook-form */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+      <Dialog open={isDialogOpen && dialogMode === 'create'} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create">
           <DialogHeader>
             <DialogTitle data-testid="text-dialog-title">Add Knowledge Base Item</DialogTitle>
@@ -562,7 +564,7 @@ export default function KnowledgeBase() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsCreateDialogOpen(false)}
+                  onClick={() => setIsDialogOpen(false)}
                   data-testid="button-cancel-create"
                 >
                   Cancel
