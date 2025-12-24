@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { WebSocketProvider } from "@/lib/useWebSocket";
-import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
 import Dashboard from "@/pages/Dashboard";
 import AIAgents from "@/pages/AIAgents";
