@@ -196,18 +196,27 @@ export default function Leads() {
           <p className="text-muted-foreground">Manage and track your incoming leads</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button 
-            onClick={() => autoAssignMutation.mutate()} 
-            disabled={autoAssignMutation.isPending}
-            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/20"
-          >
-            {autoAssignMutation.isPending ? (
-              <Sparkles className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="mr-2 h-4 w-4" />
-            )}
-            Auto Assign AI
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  onClick={() => autoAssignMutation.mutate()} 
+                  disabled={autoAssignMutation.isPending}
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/20"
+                >
+                  {autoAssignMutation.isPending ? (
+                    <Sparkles className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Auto Assign AI
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Automatically assign unassigned leads to available AI agents based on agent capabilities</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <Button onClick={handleCreate}>
             <Plus className="mr-2 h-4 w-4" />
             Add Lead

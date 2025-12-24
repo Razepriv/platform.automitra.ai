@@ -512,7 +512,16 @@ export default function CallHistory() {
                   <TableRow
                     key={call.id}
                     className="hover-elevate cursor-pointer"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedCall(call);
+                      }
+                    }}
                     onClick={() => setSelectedCall(call)}
+                    role="button"
+                    aria-label={`Call to ${call.contactName || call.contactPhone || 'Unknown'}`}
                     data-testid={`row-call-${call.id}`}
                   >
                     <TableCell data-testid={`text-date-${call.id}`}>

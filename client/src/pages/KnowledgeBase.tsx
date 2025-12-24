@@ -45,6 +45,13 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, FileText, Trash2, Edit, BookOpen, X, Upload, Zap } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonTable } from "@/components/SkeletonTable";
+import { CharacterCounter } from "@/components/CharacterCounter";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
@@ -316,19 +323,28 @@ export default function KnowledgeBase() {
         </div>
         <div className="flex gap-2">
           {agents.filter(a => a.bolnaAgentId && knowledgeBase.some(kb => kb.agentId === a.id)).length > 0 && (
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                const agentWithKB = agents.find(a => a.bolnaAgentId && knowledgeBase.some(kb => kb.agentId === a.id));
-                if (agentWithKB) {
-                  syncToBolnaMutation.mutate(agentWithKB.id);
-                }
-              }}
-              disabled={syncToBolnaMutation.isPending}
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              {syncToBolnaMutation.isPending ? "Syncing..." : "Sync to Bolna"}
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      const agentWithKB = agents.find(a => a.bolnaAgentId && knowledgeBase.some(kb => kb.agentId === a.id));
+                      if (agentWithKB) {
+                        syncToBolnaMutation.mutate(agentWithKB.id);
+                      }
+                    }}
+                    disabled={syncToBolnaMutation.isPending}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {syncToBolnaMutation.isPending ? "Syncing..." : "Sync to Bolna"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Unify all knowledge base items into a single PDF and sync to Bolna for the agent</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           <Button onClick={handleOpenCreateDialog} data-testid="button-create">
             <Plus className="w-4 h-4 mr-2" />
@@ -462,16 +478,24 @@ export default function KnowledgeBase() {
                       Edit
                     </Button>
                     {item.agentId && agents.find(a => a.id === item.agentId)?.bolnaAgentId && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => syncToBolnaMutation.mutate(item.agentId!)}
-                        disabled={syncToBolnaMutation.isPending}
-                        title="Sync all knowledge base items for this agent to Bolna as unified PDF"
-                      >
-                        <Zap className="w-3 h-3 mr-1" />
-                        Sync
-                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => syncToBolnaMutation.mutate(item.agentId!)}
+                              disabled={syncToBolnaMutation.isPending}
+                            >
+                              <Zap className="w-3 h-3 mr-1" />
+                              Sync
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Sync all knowledge base items for this agent to Bolna as unified PDF</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     <Button
                       variant="outline"
@@ -529,10 +553,17 @@ export default function KnowledgeBase() {
                       <Textarea
                         placeholder="Enter content or training data"
                         rows={6}
+                        maxLength={10000}
                         {...field}
                         data-testid="input-content"
                       />
                     </FormControl>
+                    <CharacterCounter 
+                      current={field.value?.length || 0} 
+                      max={10000}
+                      label="Content"
+                      className="mt-1"
+                    />
                     <FormMessage />
                   </FormItem>
                 )}
@@ -707,11 +738,18 @@ export default function KnowledgeBase() {
                     <FormControl>
                       <Textarea
                         rows={6}
+                        maxLength={10000}
                         value={field.value ?? ""}
                         onChange={field.onChange}
                         data-testid="input-edit-content"
                       />
                     </FormControl>
+                    <CharacterCounter 
+                      current={(field.value ?? "").length} 
+                      max={10000}
+                      label="Content"
+                      className="mt-1"
+                    />
                     <FormMessage />
                   </FormItem>
                 )}
