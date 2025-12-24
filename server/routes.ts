@@ -19,7 +19,7 @@ import {
 import { analyzeTranscriptForLeadAssignment } from "./utils/aiLeadAssigner";
 import { db } from "./db";
 import { leads, users, notifications, pipelines, type UserRole, type InsertNotification, type InsertPipeline } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import type { InsertLead, InsertChannelPartner, InsertCampaign, InsertCall, InsertVisit, InsertAiAgent, CreateAiAgentInput, UpdateAiAgentInput, InsertKnowledgeBase, CreateKnowledgeBaseInput, UpdateKnowledgeBaseInput, InsertPhoneNumber } from "@shared/schema";
 import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
 
@@ -3753,7 +3753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orgPipelines = await db.select()
         .from(pipelines)
         .where(eq(pipelines.organizationId, user.organizationId))
-        .orderBy(pipelines.order);
+        .orderBy(asc(pipelines.order));
 
       res.json(orgPipelines);
     } catch (error) {

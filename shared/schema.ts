@@ -340,6 +340,58 @@ export const insertVisitSchema = createInsertSchema(visits).omit({
 export type InsertVisit = z.infer<typeof insertVisitSchema>;
 export type Visit = typeof visits.$inferSelect;
 
+// Pipelines table - Sales/Lead pipeline stages
+export const pipelines = pgTable("pipelines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  stage: varchar("stage", { length: 50 }).notNull(), // e.g., 'new', 'contacted', 'qualified', 'proposal', 'closed-won', 'closed-lost'
+  order: integer("order").notNull().default(0),
+  color: varchar("color", { length: 7 }), // Hex color code
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_pipelines_org").on(table.organizationId),
+  index("idx_pipelines_stage").on(table.stage),
+]);
+
+export const insertPipelineSchema = createInsertSchema(pipelines).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPipeline = z.infer<typeof insertPipelineSchema>;
+export type Pipeline = typeof pipelines.$inferSelect;
+
+// Notifications table - User notifications
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organizationId: varchar("organization_id").notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // 'welcome', 'call', 'billing', 'update', 'lead_assigned', etc.
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  read: boolean("read").notNull().default(false),
+  metadata: jsonb("metadata"), // Additional data (callId, leadId, etc.)
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_notifications_user").on(table.userId),
+  index("idx_notifications_org").on(table.organizationId),
+  index("idx_notifications_read").on(table.read),
+  index("idx_notifications_created").on(table.createdAt),
+]);
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
 export const leads = pgTable("leads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
