@@ -114,7 +114,12 @@ export default function AIAgents() {
     }
   }, []);
 
-  const { data: agents, isLoading } = useQuery<AiAgent[]>({
+  const {
+    data: agents,
+    isLoading,
+    isError,
+    error
+  } = useQuery<AiAgent[]>({
     queryKey: ['/api/ai-agents'],
   });
 
@@ -517,7 +522,6 @@ export default function AIAgents() {
             Create Agent
           </Button>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <Card key={i} className="animate-pulse">
@@ -536,6 +540,19 @@ export default function AIAgents() {
             </Card>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-8 flex flex-col items-center justify-center text-center">
+        <Bot className="h-10 w-10 text-destructive mb-4" />
+        <h2 className="text-xl font-bold mb-2">Error loading AI Agents</h2>
+        <p className="text-destructive mb-4">{error?.message || "Failed to load agents. Please try again later."}</p>
+        <Button onClick={() => window.location.reload()} variant="destructive">
+          Retry
+        </Button>
       </div>
     );
   }

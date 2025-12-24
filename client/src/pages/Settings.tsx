@@ -151,34 +151,95 @@ export default function Settings() {
     }
   };
 
-  // 2FA handler (stub)
-  const handleEnable2FA = () => {
+  // 2FA handler (real logic)
+  const handleEnable2FA = async () => {
     setIs2FAEnabled(true);
-    toast({ title: "2FA", description: "2FA setup flow triggered (implement as needed)" });
+    try {
+      const response = await fetch("/api/user/enable-2fa", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to enable 2FA");
+      toast({ title: "2FA", description: "Two-factor authentication enabled successfully" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
   };
 
-  // Webhook config handler (stub)
-  const handleConfigureWebhook = () => {
+  // Webhook config handler (real logic)
+  const handleConfigureWebhook = async () => {
     setIsConfiguringWebhook(true);
-    toast({ title: "Webhook", description: "Webhook configuration flow triggered (implement as needed)" });
+    try {
+      const response = await fetch("/api/organization/webhook", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhookUrl }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to configure webhook");
+      toast({ title: "Webhook", description: "Webhook configured successfully" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsConfiguringWebhook(false);
+    }
   };
 
-  // Email notification config handler (stub)
-  const handleConfigureEmail = () => {
+  // Email notification config handler (real logic)
+  const handleConfigureEmail = async () => {
     setIsConfiguringEmail(true);
-    toast({ title: "Email Notifications", description: "Email notification configuration flow triggered (implement as needed)" });
+    try {
+      const response = await fetch("/api/user/notifications/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to enable email notifications");
+      toast({ title: "Email Notifications", description: "Email notifications enabled successfully" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsConfiguringEmail(false);
+    }
   };
 
-  // Call alerts enable handler (stub)
-  const handleEnableCallAlerts = () => {
+  // Call alerts enable handler (real logic)
+  const handleEnableCallAlerts = async () => {
     setIsEnablingCallAlerts(true);
-    toast({ title: "Call Alerts", description: "Call alerts enabled (implement as needed)" });
+    try {
+      const response = await fetch("/api/user/notifications/call-alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to enable call alerts");
+      toast({ title: "Call Alerts", description: "Call alerts enabled successfully" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsEnablingCallAlerts(false);
+    }
   };
 
-  // Daily summary enable handler (stub)
-  const handleEnableDailySummary = () => {
+  // Daily summary enable handler (real logic)
+  const handleEnableDailySummary = async () => {
     setIsEnablingDailySummary(true);
-    toast({ title: "Daily Summary", description: "Daily summary enabled (implement as needed)" });
+    try {
+      const response = await fetch("/api/user/notifications/daily-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to enable daily summary");
+      toast({ title: "Daily Summary", description: "Daily summary enabled successfully" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsEnablingDailySummary(false);
+    }
   };
 
   // Apply brand color to document body if set

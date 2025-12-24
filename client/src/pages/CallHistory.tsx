@@ -128,6 +128,7 @@ export default function CallHistory() {
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
   const { toast } = useToast();
+  const { user } = require("@/hooks/useAuth").useAuth();
 
   // Auto-open dialog from Quick Actions
   useEffect(() => {
@@ -144,7 +145,12 @@ export default function CallHistory() {
   }, []);
 
   const { data: calls = [], isLoading, refetch: refetchCalls } = useQuery<Call[]>({
-    queryKey: ["/api/calls"],
+    queryKey: ["/api/calls", user?.id],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/calls?userId=${user?.id}`);
+      return res.json();
+    },
+    enabled: !!user,
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
@@ -285,6 +291,8 @@ export default function CallHistory() {
   });
 
   const filteredCalls = calls.filter((call) => {
+    // Only show calls made by the logged-in user
+    if (call.userId !== user?.id) return false;
     const matchesSearch =
       !searchQuery ||
       call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||

@@ -94,6 +94,11 @@ export function AppSidebar() {
       url: "/contacts",
       icon: UserCircle,
     },
+    {
+      title: "Campaigns",
+      url: "/campaigns",
+      icon: Send,
+    },
   ];
 
   const toolsNav = [
