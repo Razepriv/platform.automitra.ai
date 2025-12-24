@@ -47,6 +47,7 @@ function UnauthenticatedRouter() {
 }
 
 function AuthenticatedRouter() {
+  const CampaignsPage = require("@/pages/campaigns/index").default;
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
@@ -56,6 +57,7 @@ function AuthenticatedRouter() {
       <Route path="/leads" component={Leads} />
       <Route path="/pipelines" component={Pipelines} />
       <Route path="/contacts" component={Contacts} />
+      <Route path="/campaigns" component={CampaignsPage} />
       <Route path="/knowledge-base" component={KnowledgeBase} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/billing" component={Billing} />
