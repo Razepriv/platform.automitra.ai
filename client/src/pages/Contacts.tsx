@@ -27,6 +27,8 @@ import { LeadDialog } from "@/components/LeadDialog";
 import type { Lead } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
+import { useCallback } from "react";
 
 export default function Contacts() {
   const { toast } = useToast();
@@ -37,6 +39,19 @@ export default function Contacts() {
   const { data: leads = [], isLoading } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
   });
+
+  // Real-time updates via WebSocket
+  useWebSocketEvent('lead:created', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
+  useWebSocketEvent('lead:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
+  useWebSocketEvent('lead:deleted', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {

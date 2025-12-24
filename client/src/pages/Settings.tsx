@@ -20,6 +20,10 @@ import {
   Database,
   Palette,
   Upload,
+  Plus,
+  Edit,
+  Trash2,
+  Users,
 } from "lucide-react";
 import {
   Tabs,
@@ -27,9 +31,32 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useAuth } from "@/hooks/useAuth";
 import { queryClient } from "@/lib/queryClient";
-import { useSocketEvent } from "@/lib/useSocket";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
 
 export default function Settings() {
   const { user } = useAuth();
@@ -47,6 +74,17 @@ export default function Settings() {
   const [isConfiguringEmail, setIsConfiguringEmail] = useState(false);
   const [isEnablingCallAlerts, setIsEnablingCallAlerts] = useState(false);
   const [isEnablingDailySummary, setIsEnablingDailySummary] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>("");
+  const [isTeamMemberDialogOpen, setIsTeamMemberDialogOpen] = useState(false);
+  const [editingTeamMember, setEditingTeamMember] = useState<any>(null);
+  const [teamMemberForm, setTeamMemberForm] = useState({
+    email: "",
+    password: "",
+    firstName: "",
+    lastName: "",
+    role: "agent_manager" as "admin" | "agent_manager" | "analyst" | "developer",
+  });
 
   const { data: phoneNumbers = [] } = useQuery({
     queryKey: ["/api/phone-numbers"],
@@ -63,54 +101,70 @@ export default function Settings() {
         setCompanyName(data.companyName || "");
         setLogoUrl(data.logoUrl || "");
         setPrimaryColor(data.primaryColor || "");
+        if (data.logoUrl) {
+          setLogoPreview(data.logoUrl);
+        }
       }
     },
   });
 
+  const { data: teamMembers = [], refetch: refetchTeamMembers } = useQuery({
+    queryKey: ["/api/users"],
+    enabled: user?.role === 'admin',
+  });
+
 
   // Real-time updates for all settings-related entities
-  useSocketEvent('organization:updated', () => {
+  useWebSocketEvent('organization:updated', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/organization'] });
-  }, user?.organizationId);
+  }, []));
 
-  useSocketEvent('phone:created', () => {
+  useWebSocketEvent('phone:created', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
-  }, user?.organizationId);
+  }, []));
 
-  useSocketEvent('phone:updated', () => {
+  useWebSocketEvent('phone:updated', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
-  }, user?.organizationId);
+  }, []));
 
-  useSocketEvent('agent:created', () => {
+  useWebSocketEvent('agent:created', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-  }, user?.organizationId);
+  }, []));
 
-  useSocketEvent('agent:updated', () => {
+  useWebSocketEvent('agent:updated', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-  }, user?.organizationId);
+  }, []));
 
-  useSocketEvent('campaign:created', () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/campaigns-list'] });
-  }, user?.organizationId);
+  useWebSocketEvent('campaign:created', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
+  }, []));
 
-  useSocketEvent('campaign:updated', () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/campaigns-list'] });
-  }, user?.organizationId);
+  useWebSocketEvent('campaign:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
+  }, []));
 
-  useSocketEvent('contact:created', () => {
+  useWebSocketEvent('contact:created', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
-  }, user?.organizationId);
+  }, []));
 
-  useSocketEvent('contact:updated', () => {
+  useWebSocketEvent('contact:updated', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
-  }, user?.organizationId);
+  }, []));
 
   const updateWhitelabelMutation = useMutation({
-    mutationFn: async (data: { companyName: string; logoUrl: string; primaryColor: string }) => {
+    mutationFn: async (data: { companyName: string; logoUrl?: string; logoFile?: File; primaryColor: string }) => {
+      const formData = new FormData();
+      formData.append("companyName", data.companyName);
+      formData.append("primaryColor", data.primaryColor);
+      if (data.logoFile) {
+        formData.append("logo", data.logoFile);
+      } else if (data.logoUrl) {
+        formData.append("logoUrl", data.logoUrl);
+      }
+
       const response = await fetch("/api/organization/whitelabel", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: formData,
         credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to update whitelabel");
@@ -239,6 +293,154 @@ export default function Settings() {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setIsEnablingDailySummary(false);
+    }
+  };
+
+  // Handle logo file selection
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setLogoFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLogoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Team member mutations
+  const createTeamMemberMutation = useMutation({
+    mutationFn: async (data: typeof teamMemberForm) => {
+      const response = await fetch("/api/users/team-members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create team member");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchTeamMembers();
+      setIsTeamMemberDialogOpen(false);
+      setTeamMemberForm({
+        email: "",
+        password: "",
+        firstName: "",
+        lastName: "",
+        role: "agent_manager",
+      });
+      toast({
+        title: "Success",
+        description: "Team member created successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create team member",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateTeamMemberMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof teamMemberForm> }) => {
+      const response = await fetch(`/api/users/team-members/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to update team member");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchTeamMembers();
+      setIsTeamMemberDialogOpen(false);
+      setEditingTeamMember(null);
+      setTeamMemberForm({
+        email: "",
+        password: "",
+        firstName: "",
+        lastName: "",
+        role: "agent_manager",
+      });
+      toast({
+        title: "Success",
+        description: "Team member updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update team member",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteTeamMemberMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/users/team-members/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete team member");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchTeamMembers();
+      toast({
+        title: "Success",
+        description: "Team member deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete team member",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditTeamMember = (member: any) => {
+    setEditingTeamMember(member);
+    setTeamMemberForm({
+      email: member.email || "",
+      password: "",
+      firstName: member.firstName || "",
+      lastName: member.lastName || "",
+      role: member.role || "agent_manager",
+    });
+    setIsTeamMemberDialogOpen(true);
+  };
+
+  const handleSaveTeamMember = () => {
+    if (editingTeamMember) {
+      updateTeamMemberMutation.mutate({
+        id: editingTeamMember.id,
+        data: {
+          email: teamMemberForm.email,
+          firstName: teamMemberForm.firstName,
+          lastName: teamMemberForm.lastName,
+          role: teamMemberForm.role,
+          ...(teamMemberForm.password ? { password: teamMemberForm.password } : {}),
+        },
+      });
+    } else {
+      createTeamMemberMutation.mutate(teamMemberForm);
     }
   };
 
@@ -411,33 +613,32 @@ export default function Settings() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="logoUrl">Logo URL</Label>
-                <Input
-                  id="logoUrl"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="https://example.com/logo.png"
-                />
+                <Label htmlFor="logoFile">Company Logo</Label>
+                <div className="flex items-center gap-4">
+                  <Input
+                    id="logoFile"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoFileChange}
+                    className="cursor-pointer"
+                  />
+                  {logoPreview && (
+                    <div className="border rounded-md p-2 bg-muted/50">
+                      <img 
+                        src={logoPreview} 
+                        alt="Logo preview" 
+                        className="h-12 object-contain"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
-                  Enter the URL of your company logo (recommended: 200x50px, transparent background)
+                  Upload your company logo (recommended: 200x50px, transparent background, PNG or SVG)
                 </p>
               </div>
-
-              {logoUrl && (
-                <div className="space-y-2">
-                  <Label>Logo Preview</Label>
-                  <div className="border rounded-md p-4 bg-muted/50">
-                    <img 
-                      src={logoUrl} 
-                      alt="Logo preview" 
-                      className="h-12 object-contain"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-2">
                 <Label htmlFor="primaryColor">Primary Brand Color (Optional)</Label>
@@ -475,7 +676,12 @@ export default function Settings() {
                   Reset
                 </Button>
                 <Button
-                  onClick={() => updateWhitelabelMutation.mutate({ companyName, logoUrl, primaryColor })}
+                  onClick={() => updateWhitelabelMutation.mutate({ 
+                    companyName, 
+                    logoFile: logoFile || undefined,
+                    logoUrl: logoFile ? undefined : logoUrl,
+                    primaryColor 
+                  })}
                   disabled={updateWhitelabelMutation.isPending}
                 >
                   <Palette className="h-4 w-4 mr-2" />
@@ -543,12 +749,89 @@ export default function Settings() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Team Members</Label>
-                <div className="text-2xl font-bold">{1}</div>
-                <p className="text-sm text-muted-foreground">
-                  Active users in your organization
-                </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Team Members</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {teamMembers.length} active user{teamMembers.length !== 1 ? 's' : ''} in your organization
+                    </p>
+                  </div>
+                  {user?.role === 'admin' && (
+                    <Button
+                      onClick={() => {
+                        setEditingTeamMember(null);
+                        setTeamMemberForm({
+                          email: "",
+                          password: "",
+                          firstName: "",
+                          lastName: "",
+                          role: "agent_manager",
+                        });
+                        setIsTeamMemberDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Team Member
+                    </Button>
+                  )}
+                </div>
+
+                {user?.role === 'admin' && teamMembers.length > 0 && (
+                  <div className="border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {teamMembers.map((member: any) => (
+                          <TableRow key={member.id}>
+                            <TableCell>
+                              {member.firstName || member.lastName
+                                ? `${member.firstName || ''} ${member.lastName || ''}`.trim()
+                                : member.email?.split('@')[0] || 'N/A'}
+                            </TableCell>
+                            <TableCell>{member.email || 'N/A'}</TableCell>
+                            <TableCell>
+                              <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
+                                {member.role || 'agent_manager'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditTeamMember(member)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {member.id !== user?.id && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (confirm(`Are you sure you want to delete ${member.email}?`)) {
+                                        deleteTeamMemberMutation.mutate(member.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
 
               <Separator />
@@ -675,6 +958,198 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>WhatsApp Integration</CardTitle>
+              <CardDescription>
+                Connect your WhatsApp Business account for messaging
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                    <Phone className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium">WhatsApp Business API</p>
+                    <p className="text-sm text-muted-foreground">
+                      Connect your WhatsApp Business account
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="outline">Not Connected</Badge>
+              </div>
+
+              <div className="space-y-2">
+                <Label>WhatsApp Business API Token</Label>
+                <Input
+                  type="password"
+                  placeholder="Enter your WhatsApp Business API token"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Get your API token from WhatsApp Business Platform
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Phone Number ID</Label>
+                <Input
+                  placeholder="Enter your WhatsApp Business phone number ID"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Webhook Verify Token</Label>
+                <Input
+                  type="password"
+                  placeholder="Enter webhook verify token"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Used to verify webhook requests from WhatsApp
+                </p>
+              </div>
+
+              <Button variant="outline" className="w-full">
+                Connect WhatsApp
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Third-Party Integrations</CardTitle>
+              <CardDescription>
+                Connect external services and platforms
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* CRM Integrations */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">CRM Integrations</Label>
+                
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                      <Database className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Salesforce</p>
+                      <p className="text-sm text-muted-foreground">
+                        Sync leads and contacts
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-orange-500/10 flex items-center justify-center">
+                      <Database className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">HubSpot</p>
+                      <p className="text-sm text-muted-foreground">
+                        Sync contacts and deals
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                      <Database className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Zoho CRM</p>
+                      <p className="text-sm text-muted-foreground">
+                        Sync contacts and activities
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Communication Integrations */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Communication Platforms</Label>
+                
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                      <Phone className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Slack</p>
+                      <p className="text-sm text-muted-foreground">
+                        Get notifications in Slack
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                      <Phone className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Microsoft Teams</p>
+                      <p className="text-sm text-muted-foreground">
+                        Get notifications in Teams
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Analytics Integrations */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Analytics & Reporting</Label>
+                
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                      <Database className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Google Analytics</p>
+                      <p className="text-sm text-muted-foreground">
+                        Track call analytics
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                      <Database className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Mixpanel</p>
+                      <p className="text-sm text-muted-foreground">
+                        Advanced analytics tracking
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Notifications Settings */}
@@ -730,6 +1205,147 @@ export default function Settings() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Team Member Dialog */}
+      <Dialog open={isTeamMemberDialogOpen} onOpenChange={setIsTeamMemberDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingTeamMember ? "Edit Team Member" : "Add Team Member"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingTeamMember
+                ? "Update team member details and role"
+                : "Create a new team member with login access"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="teamMemberEmail">Email *</Label>
+              <Input
+                id="teamMemberEmail"
+                type="email"
+                value={teamMemberForm.email}
+                onChange={(e) =>
+                  setTeamMemberForm({ ...teamMemberForm, email: e.target.value })
+                }
+                placeholder="user@example.com"
+                disabled={!!editingTeamMember}
+              />
+            </div>
+            {!editingTeamMember && (
+              <div className="space-y-2">
+                <Label htmlFor="teamMemberPassword">Password *</Label>
+                <Input
+                  id="teamMemberPassword"
+                  type="password"
+                  value={teamMemberForm.password}
+                  onChange={(e) =>
+                    setTeamMemberForm({ ...teamMemberForm, password: e.target.value })
+                  }
+                  placeholder="Minimum 8 characters"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Password must be at least 8 characters with uppercase, lowercase, number, and special character
+                </p>
+              </div>
+            )}
+            {editingTeamMember && (
+              <div className="space-y-2">
+                <Label htmlFor="teamMemberPasswordEdit">New Password (optional)</Label>
+                <Input
+                  id="teamMemberPasswordEdit"
+                  type="password"
+                  value={teamMemberForm.password}
+                  onChange={(e) =>
+                    setTeamMemberForm({ ...teamMemberForm, password: e.target.value })
+                  }
+                  placeholder="Leave blank to keep current password"
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="teamMemberFirstName">First Name</Label>
+                <Input
+                  id="teamMemberFirstName"
+                  value={teamMemberForm.firstName}
+                  onChange={(e) =>
+                    setTeamMemberForm({ ...teamMemberForm, firstName: e.target.value })
+                  }
+                  placeholder="John"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="teamMemberLastName">Last Name</Label>
+                <Input
+                  id="teamMemberLastName"
+                  value={teamMemberForm.lastName}
+                  onChange={(e) =>
+                    setTeamMemberForm({ ...teamMemberForm, lastName: e.target.value })
+                  }
+                  placeholder="Doe"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="teamMemberRole">Role *</Label>
+              <Select
+                value={teamMemberForm.role}
+                onValueChange={(value: any) =>
+                  setTeamMemberForm({ ...teamMemberForm, role: value })
+                }
+              >
+                <SelectTrigger id="teamMemberRole">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="agent_manager">Agent Manager</SelectItem>
+                  <SelectItem value="analyst">Analyst</SelectItem>
+                  <SelectItem value="developer">Developer</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Admin: Full access | Agent Manager: Manage agents and campaigns | Analyst: View analytics | Developer: API access
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsTeamMemberDialogOpen(false);
+                setEditingTeamMember(null);
+                setTeamMemberForm({
+                  email: "",
+                  password: "",
+                  firstName: "",
+                  lastName: "",
+                  role: "agent_manager",
+                });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveTeamMember}
+              disabled={
+                createTeamMemberMutation.isPending ||
+                updateTeamMemberMutation.isPending ||
+                !teamMemberForm.email ||
+                (!editingTeamMember && !teamMemberForm.password)
+              }
+            >
+              {createTeamMemberMutation.isPending || updateTeamMemberMutation.isPending
+                ? "Saving..."
+                : editingTeamMember
+                ? "Update"
+                : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

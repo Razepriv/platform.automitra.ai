@@ -1013,6 +1013,77 @@ export class BolnaClient {
       body: JSON.stringify(callData),
     });
   }
+
+  // Voice Cloning Management
+  async cloneVoice(audioFile: File | Buffer | any, options?: {
+    voice_name?: string;
+    description?: string;
+    fileName?: string;
+  }): Promise<{ voice_id: string; voice_name: string; status: string }> {
+    this.ensureConfigured();
+    
+    const FormData = (await import('form-data')).default;
+    const formData = new FormData();
+    
+    if (options?.voice_name) formData.append('voice_name', options.voice_name);
+    if (options?.description) formData.append('description', options.description);
+    
+    if (Buffer.isBuffer(audioFile)) {
+      formData.append('audio_file', audioFile, options?.fileName || 'voice_sample.mp3');
+    } else if (audioFile && typeof audioFile === 'object' && 'buffer' in audioFile) {
+      formData.append('audio_file', audioFile.buffer, audioFile.originalname || options?.fileName || 'voice_sample.mp3');
+    } else {
+      throw new Error('Invalid audio file type. Expected Buffer or multer file object.');
+    }
+
+    const url = `${this.baseUrl}/voices/clone`;
+    const headers: Record<string, string> = {
+      "Authorization": `Bearer ${this.apiKey}`,
+      ...formData.getHeaders(),
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData as any,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Bolna API error (${response.status}): ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
+  async getClonedVoices(): Promise<BolnaVoice[]> {
+    this.ensureConfigured();
+    try {
+      const response = await this.request<BolnaVoice[] | { data?: BolnaVoice[]; voices?: BolnaVoice[] }>("/voices/cloned");
+      if (Array.isArray(response)) {
+        return response;
+      }
+      if (response && typeof response === 'object') {
+        if ('data' in response && Array.isArray((response as any).data)) {
+          return (response as any).data;
+        }
+        if ('voices' in response && Array.isArray((response as any).voices)) {
+          return (response as any).voices;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error("Error fetching cloned voices:", error);
+      return [];
+    }
+  }
+
+  async deleteClonedVoice(voiceId: string): Promise<void> {
+    this.ensureConfigured();
+    await this.request<void>(`/voices/${voiceId}`, {
+      method: "DELETE",
+    });
+  }
 }
 
 export const bolnaClient = new BolnaClient();

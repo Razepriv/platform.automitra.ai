@@ -42,7 +42,9 @@ function UnauthenticatedRouter() {
       <Route path="/">
         <Auth mode="login" />
       </Route>
-      <Route component={Auth} />
+      <Route>
+        <Auth mode="login" />
+      </Route>
     </Switch>
   );
 }

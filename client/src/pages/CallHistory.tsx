@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { Pagination } from "@/components/Pagination";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -128,6 +129,8 @@ export default function CallHistory() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -291,18 +294,6 @@ export default function CallHistory() {
     },
   });
 
-  const filteredCalls = calls.filter((call) => {
-    // Only show calls made by the logged-in user
-    if (call.userId !== user?.id) return false;
-    const matchesSearch =
-      !searchQuery ||
-      call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      call.contactPhone?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus = statusFilter === "all" || call.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -341,21 +332,27 @@ export default function CallHistory() {
             onClick={exportCallsToCSV}
             disabled={filteredCalls.length === 0}
             data-testid="button-export"
+            aria-label={`Export ${filteredCalls.length} calls to CSV`}
           >
-            <Download className="w-4 h-4 mr-2" />
-            Export ({filteredCalls.length})
+            <Download className="w-4 h-4 mr-2" aria-hidden="true" />
+            <span>Export ({filteredCalls.length})</span>
           </Button>
           <Button 
             variant="outline" 
             onClick={() => refetchCalls()}
             data-testid="button-refresh"
+            aria-label="Refresh call history"
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
+            <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
+            <span>Refresh</span>
           </Button>
-          <Button onClick={() => setIsNewCallDialogOpen(true)} data-testid="button-new-call">
-            <PhoneCall className="w-4 h-4 mr-2" />
-            New Call
+          <Button 
+            onClick={() => setIsNewCallDialogOpen(true)} 
+            data-testid="button-new-call"
+            aria-label="Initiate a new call"
+          >
+            <PhoneCall className="w-4 h-4 mr-2" aria-hidden="true" />
+            <span>New Call</span>
           </Button>
         </div>
       </div>
@@ -459,18 +456,41 @@ export default function CallHistory() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12" data-testid="loading-calls">
-              <div className="text-muted-foreground">Loading calls...</div>
+            <div className="p-6" data-testid="loading-calls">
+              <SkeletonTable rows={5} columns={9} />
+            </div>
+          ) : filteredCalls.length === 0 && calls.length === 0 ? (
+            <div className="p-6" data-testid="empty-calls">
+              <EmptyState
+                icon={PhoneCall}
+                title="No Calls Yet"
+                description="Call history will appear here once you start making calls with your AI agents"
+                action={
+                  <Button onClick={() => setIsNewCallDialogOpen(true)}>
+                    <PhoneCall className="h-4 w-4 mr-2" />
+                    Make Your First Call
+                  </Button>
+                }
+              />
             </div>
           ) : filteredCalls.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12" data-testid="empty-calls">
-              <Phone className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No calls found</h3>
-              <p className="text-muted-foreground text-center max-w-md">
-                {searchQuery || statusFilter !== "all"
-                  ? "Try adjusting your filters to see more results."
-                  : "Call history will appear here once you start making calls with your AI agents."}
-              </p>
+            <div className="p-6" data-testid="empty-filtered-calls">
+              <EmptyState
+                icon={Search}
+                title="No calls found"
+                description={`No calls match your search "${searchQuery}"${statusFilter !== "all" ? ` and status "${statusFilter}"` : ""}`}
+                action={
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setSearchQuery("");
+                      setStatusFilter("all");
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                }
+              />
             </div>
           ) : (
             <Table>
@@ -488,7 +508,7 @@ export default function CallHistory() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCalls.map((call) => (
+                {paginatedCalls.map((call) => (
                   <TableRow
                     key={call.id}
                     className="hover-elevate cursor-pointer"
@@ -568,6 +588,19 @@ export default function CallHistory() {
                 ))}
               </TableBody>
             </Table>
+          )}
+          {!isLoading && filteredCalls.length > 0 && (
+            <div className="border-t">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                totalItems={filteredCalls.length}
+                showingFrom={showingFrom}
+                showingTo={showingTo}
+              />
+            </div>
           )}
         </CardContent>
       </Card>

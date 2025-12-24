@@ -4,7 +4,18 @@ import { AgentFormDialog, AgentFormValues } from "@/components/AgentFormDialog";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Phone, Plus, Settings, Zap, Loader2, BookOpen, Mic, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
+import { Bot, Phone, Plus, Settings, Zap, Loader2, BookOpen, Mic, RefreshCw, Trash2, AlertTriangle, Search, Filter } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { SkeletonCard } from "@/components/SkeletonTable";
+import { Pagination } from "@/components/Pagination";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
@@ -97,6 +108,10 @@ export default function AIAgents() {
   const [dialogMode, setDialogMode] = useState<"create"|"edit">("create");
   const [formInitialValues, setFormInitialValues] = useState<Partial<AgentFormValues> | undefined>(undefined);
   const [selectedAgent, setSelectedAgent] = useState<AiAgent | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
   const { toast } = useToast();
 
   // Auto-open dialog from Quick Actions
@@ -135,6 +150,44 @@ export default function AIAgents() {
   useWebSocketEvent('agent:deleted', useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
   }, []));
+
+  // Filter agents based on search and status
+  const filteredAgents = useMemo(() => {
+    if (!agents) return [];
+    let filtered = agents;
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(agent =>
+        agent.name?.toLowerCase().includes(query) ||
+        agent.description?.toLowerCase().includes(query) ||
+        agent.voiceName?.toLowerCase().includes(query) ||
+        agent.model?.toLowerCase().includes(query)
+      );
+    }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(agent => agent.status === statusFilter);
+    }
+
+    return filtered;
+  }, [agents, searchQuery, statusFilter]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredAgents.length / itemsPerPage);
+  const paginatedAgents = filteredAgents.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+  const showingFrom = filteredAgents.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const showingTo = Math.min(currentPage * itemsPerPage, filteredAgents.length);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   // State for voice provider filter
   const [voiceProviderFilter, setVoiceProviderFilter] = useState<string>('all');
@@ -213,7 +266,7 @@ export default function AIAgents() {
       setVoiceProviderFilter('all');
       // Don't set voiceProvider to 'all' - keep the default 'elevenlabs'
     }
-  }, [isDialogOpen, dialogMode, form]);
+  }, [isDialogOpen, dialogMode]);
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
@@ -319,7 +372,7 @@ export default function AIAgents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
       setIsDialogOpen(false);
-      form.reset();
+      setFormInitialValues(undefined);
       toast({
         title: "Success",
         description: "AI Agent created successfully",
@@ -439,9 +492,9 @@ export default function AIAgents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-      setIsEditDialogOpen(false);
+      setIsDialogOpen(false);
       setSelectedAgent(null);
-      form.reset();
+      setFormInitialValues(undefined);
       toast({
         title: "Success",
         description: "AI Agent updated successfully",
@@ -524,20 +577,7 @@ export default function AIAgents() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-6 w-32 bg-muted rounded" />
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="h-4 w-full bg-muted rounded" />
-                  <div className="h-4 w-3/4 bg-muted rounded" />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <div className="h-10 w-full bg-muted rounded" />
-              </CardFooter>
-            </Card>
+            <SkeletonCard key={i} />
           ))}
         </div>
       </div>
@@ -574,29 +614,66 @@ export default function AIAgents() {
         </Button>
       </div>
 
-      {!agents || agents.length === 0 ? (
-        <Card className="p-12 text-center" data-testid="card-empty-state">
-          <div className="flex flex-col items-center gap-4">
-            <div className="p-4 bg-muted rounded-full">
-              <Bot className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-1" data-testid="heading-empty-title">
-                No AI Agents Yet
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4" data-testid="text-empty-description">
-                Create your first AI voice agent to start handling calls
-              </p>
-              <Button onClick={() => handleOpenCreate()} data-testid="button-create-first-agent">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Your First Agent
-              </Button>
-            </div>
+      {/* Search and Filter Bar */}
+      {agents.length > 0 && (
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search agents by name, description, voice, or model..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
           </div>
-        </Card>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]">
+              <Filter className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="testing">Testing</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {agents.length === 0 ? (
+        <EmptyState
+          icon={Bot}
+          title="No AI Agents Yet"
+          description="Create your first AI voice agent to start handling calls and automating conversations"
+          action={
+            <Button onClick={() => handleOpenCreate()} data-testid="button-create-first-agent">
+              <Plus className="h-4 w-4 mr-2" />
+              Create Your First Agent
+            </Button>
+          }
+        />
+      ) : filteredAgents.length === 0 ? (
+        <EmptyState
+          icon={Search}
+          title="No agents found"
+          description={`No agents match your search "${searchQuery}"${statusFilter !== "all" ? ` and status "${statusFilter}"` : ""}`}
+          action={
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setSearchQuery("");
+                setStatusFilter("all");
+              }}
+            >
+              Clear Filters
+            </Button>
+          }
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {agents.map((agent) => (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {paginatedAgents.map((agent) => (
             <Card key={agent.id} className="hover-elevate" data-testid={`card-agent-${agent.id}`}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
                 <div className="flex-1">
@@ -678,8 +755,8 @@ export default function AIAgents() {
                     disabled={syncMutation.isPending}
                     data-testid={`button-sync-${agent.id}`}
                   >
-                    <RefreshCw className={`h-3 w-3 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-                    {syncMutation.isPending ? 'Syncing...' : 'Sync Agent'}
+                    <RefreshCw className={`h-3 w-3 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} aria-hidden="true" />
+                    <span>{syncMutation.isPending ? 'Syncing...' : 'Sync Agent'}</span>
                   </Button>
                 )}
                 <div className="flex gap-2 w-full">
@@ -689,9 +766,10 @@ export default function AIAgents() {
                       size="sm"
                       className="flex-1"
                       data-testid={`button-call-${agent.id}`}
+                      aria-label={`Initiate call with agent ${agent.name}`}
                     >
-                      <Phone className="h-3 w-3 mr-1" />
-                      Call
+                      <Phone className="h-3 w-3 mr-1" aria-hidden="true" />
+                      <span>Call</span>
                     </Button>
                   )}
                   <Button
@@ -723,6 +801,20 @@ export default function AIAgents() {
               </CardFooter>
             </Card>
           ))}
+          </div>
+          {filteredAgents.length > itemsPerPage && (
+            <div className="border-t pt-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                totalItems={filteredAgents.length}
+                showingFrom={showingFrom}
+                showingTo={showingTo}
+              />
+            </div>
+          )}
         </div>
       )}
 
