@@ -55,6 +55,7 @@ import {
   Volume2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -128,7 +129,7 @@ export default function CallHistory() {
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
   const { toast } = useToast();
-  const { user } = require("@/hooks/useAuth").useAuth();
+  const { user } = useAuth();
 
   // Auto-open dialog from Quick Actions
   useEffect(() => {

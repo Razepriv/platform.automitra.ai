@@ -28,6 +28,7 @@ import KnowledgeBase from "@/pages/KnowledgeBase";
 import Analytics from "@/pages/Analytics";
 import Billing from "@/pages/Billing";
 import Settings from "@/pages/Settings";
+import CampaignsPage from "@/pages/campaigns/index";
 
 function UnauthenticatedRouter() {
   return (
@@ -47,7 +48,6 @@ function UnauthenticatedRouter() {
 }
 
 function AuthenticatedRouter() {
-  const CampaignsPage = require("@/pages/campaigns/index").default;
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
