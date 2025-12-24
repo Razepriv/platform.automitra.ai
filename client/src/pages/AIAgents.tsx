@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AgentFormDialog, AgentFormValues } from "@/components/AgentFormDialog";
+import { AgentFormDialog, AgentFormValues, agentFormSchema } from "@/components/AgentFormDialog";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -100,8 +100,7 @@ const agentFormSchema = createAiAgentSchema.extend({
   callForwardingEnabled: true,
   callForwardingNumber: true,
 });
-
-type AgentFormValues = z.infer<typeof agentFormSchema>;
+*/
 
 export default function AIAgents() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -270,102 +269,20 @@ export default function AIAgents() {
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
-      // Build payload - only include defined fields from schema
+      // Send all form data to backend - backend will construct Bolna config
       const payload: any = {
-        name: data.name,
-        model: data.model,
-        language: data.language,
+        ...data,
+        // Ensure required fields have defaults
+        model: data.model || data.llmModel || "gpt-4",
+        provider: data.provider || data.llmProvider || "openai",
+        voiceProvider: data.voiceProvider || data.audioVoiceProvider || "elevenlabs",
+        voiceId: data.voiceId || data.audioVoiceId,
+        language: data.language || "en-US",
         temperature: data.temperature ?? 0.7,
-        maxDuration: data.maxDuration ?? 600,
         maxTokens: data.maxTokens ?? 150,
-        provider: data.provider ?? "openai",
-        voiceProvider: data.voiceProvider ?? "elevenlabs",
-        status: data.status ?? "active",
-        callForwardingEnabled: data.callForwardingEnabled ?? false,
+        maxDuration: data.maxDuration ?? 600,
       };
-      
-      // Only add optional fields if they have values
-      if (data.description) payload.description = data.description;
-      if (data.voiceId) payload.voiceId = data.voiceId;
-      if (data.voiceName) payload.voiceName = data.voiceName;
-      if (data.systemPrompt) payload.systemPrompt = data.systemPrompt;
-      if (data.userPrompt) payload.userPrompt = data.userPrompt;
-      if (data.firstMessage) payload.firstMessage = data.firstMessage;
-      if (data.knowledgeBaseIds && data.knowledgeBaseIds.length > 0) {
-        payload.knowledgeBaseIds = data.knowledgeBaseIds;
-      }
-      if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
-      if (data.callForwardingNumber) payload.callForwardingNumber = data.callForwardingNumber;
 
-      // Construct Bolna Config
-      const bolnaConfig = {
-        agent_config: {
-          agent_name: data.name,
-          agent_welcome_message: data.firstMessage,
-          webhook_url: data.webhookUrl,
-          agent_type: data.agentType,
-          tasks: [{
-            task_type: "conversation",
-            tools_config: {
-              llm_agent: {
-                agent_type: "simple_llm_agent",
-                agent_flow_type: "streaming",
-                llm_config: {
-                  agent_flow_type: "streaming",
-                  provider: data.provider,
-                  model: data.model,
-                  max_tokens: data.maxTokens,
-                  temperature: data.temperature,
-                  request_json: true
-                }
-              },
-              synthesizer: {
-                provider: data.voiceProvider,
-                provider_config: {
-                  voice: data.voiceId,
-                  language: data.language
-                },
-                stream: data.synthesizerStream,
-                buffer_size: data.synthesizerBufferSize,
-                audio_format: data.synthesizerAudioFormat
-              },
-              transcriber: {
-                provider: data.transcriberProvider,
-                model: data.transcriberModel,
-                language: data.transcriberLanguage,
-                stream: data.transcriberStream,
-                sampling_rate: data.transcriberSamplingRate,
-                encoding: data.transcriberEncoding,
-                endpointing: data.transcriberEndpointing
-              }
-            },
-            task_config: {
-              hangup_after_silence: data.hangupAfterSilence,
-              incremental_delay: data.incrementalDelay,
-              number_of_words_for_interruption: data.numberOfWordsForInterruption,
-              hangup_after_LLMCall: data.hangupAfterLLMCall,
-              call_cancellation_prompt: data.callCancellationPrompt,
-              backchanneling: data.backchanneling,
-              backchanneling_message_gap: data.backchannelingMessageGap,
-              backchanneling_start_delay: data.backchannelingStartDelay,
-              ambient_noise: data.ambientNoise,
-              ambient_noise_track: data.ambientNoiseTrack,
-              call_terminate: data.callTerminate,
-              voicemail: data.voicemail,
-              disallow_unknown_numbers: data.disallowUnknownNumbers
-            }
-          }],
-          ingest_source_config: data.ingestSourceUrl ? {
-            source_type: data.ingestSourceType,
-            source_url: data.ingestSourceUrl,
-            source_auth_token: data.ingestSourceAuthToken,
-            source_name: data.ingestSourceName
-          } : undefined
-        }
-      };
-      
-      payload.bolnaConfig = bolnaConfig;
-      
       const res = await apiRequest('POST', '/api/ai-agents', payload);
       return res.json();
     },
@@ -391,102 +308,17 @@ export default function AIAgents() {
     mutationFn: async (data: AgentFormValues) => {
       if (!selectedAgent) throw new Error("No agent selected");
       
-      // Build payload - only include defined fields from schema
+      // Send all form data to backend - backend will construct Bolna config
       const payload: any = {
-        name: data.name,
-        model: data.model,
-        language: data.language,
-        temperature: data.temperature ?? 0.7,
-        maxDuration: data.maxDuration ?? 600,
-        maxTokens: data.maxTokens ?? 150,
-        provider: data.provider ?? "openai",
-        voiceProvider: data.voiceProvider ?? "elevenlabs",
-        status: data.status ?? "active",
-        callForwardingEnabled: data.callForwardingEnabled ?? false,
+        ...data,
+        // Ensure required fields have defaults
+        model: data.model || data.llmModel || selectedAgent.model,
+        provider: data.provider || data.llmProvider || selectedAgent.provider,
+        voiceProvider: data.voiceProvider || data.audioVoiceProvider || selectedAgent.voiceProvider,
+        voiceId: data.voiceId || data.audioVoiceId || selectedAgent.voiceId,
+        language: data.language || selectedAgent.language,
       };
-      
-      // Only add optional fields if they have values
-      if (data.description) payload.description = data.description;
-      if (data.voiceId) payload.voiceId = data.voiceId;
-      if (data.voiceName) payload.voiceName = data.voiceName;
-      if (data.systemPrompt) payload.systemPrompt = data.systemPrompt;
-      if (data.userPrompt) payload.userPrompt = data.userPrompt;
-      if (data.firstMessage) payload.firstMessage = data.firstMessage;
-      if (data.knowledgeBaseIds && data.knowledgeBaseIds.length > 0) {
-        payload.knowledgeBaseIds = data.knowledgeBaseIds;
-      }
-      if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
-      if (data.callForwardingNumber) payload.callForwardingNumber = data.callForwardingNumber;
 
-      // Construct Bolna Config
-      const bolnaConfig = {
-        agent_config: {
-          agent_name: data.name,
-          agent_welcome_message: data.firstMessage,
-          webhook_url: data.webhookUrl,
-          agent_type: data.agentType,
-          tasks: [{
-            task_type: "conversation",
-            tools_config: {
-              llm_agent: {
-                agent_type: "simple_llm_agent",
-                agent_flow_type: "streaming",
-                llm_config: {
-                  agent_flow_type: "streaming",
-                  provider: data.provider,
-                  model: data.model,
-                  max_tokens: data.maxTokens,
-                  temperature: data.temperature,
-                  request_json: true
-                }
-              },
-              synthesizer: {
-                provider: data.voiceProvider,
-                provider_config: {
-                  voice: data.voiceId,
-                  language: data.language
-                },
-                stream: data.synthesizerStream,
-                buffer_size: data.synthesizerBufferSize,
-                audio_format: data.synthesizerAudioFormat
-              },
-              transcriber: {
-                provider: data.transcriberProvider,
-                model: data.transcriberModel,
-                language: data.transcriberLanguage,
-                stream: data.transcriberStream,
-                sampling_rate: data.transcriberSamplingRate,
-                encoding: data.transcriberEncoding,
-                endpointing: data.transcriberEndpointing
-              }
-            },
-            task_config: {
-              hangup_after_silence: data.hangupAfterSilence,
-              incremental_delay: data.incrementalDelay,
-              number_of_words_for_interruption: data.numberOfWordsForInterruption,
-              hangup_after_LLMCall: data.hangupAfterLLMCall,
-              call_cancellation_prompt: data.callCancellationPrompt,
-              backchanneling: data.backchanneling,
-              backchanneling_message_gap: data.backchannelingMessageGap,
-              backchanneling_start_delay: data.backchannelingStartDelay,
-              ambient_noise: data.ambientNoise,
-              ambient_noise_track: data.ambientNoiseTrack,
-              call_terminate: data.callTerminate,
-              voicemail: data.voicemail,
-              disallow_unknown_numbers: data.disallowUnknownNumbers
-            }
-          }],
-          ingest_source_config: data.ingestSourceUrl ? {
-            source_type: data.ingestSourceType,
-            source_url: data.ingestSourceUrl,
-            source_auth_token: data.ingestSourceAuthToken,
-            source_name: data.ingestSourceName
-          } : undefined
-        }
-      };
-      
-      payload.bolnaConfig = bolnaConfig;
-      
       const res = await apiRequest('PATCH', `/api/ai-agents/${selectedAgent.id}`, payload);
       return res.json();
     },
@@ -869,12 +701,13 @@ export default function AIAgents() {
         onSubmit={handleSubmit}
         mode={dialogMode}
         loading={dialogMode === "edit" ? updateMutation.isLoading : createMutation.isLoading}
-        agentFormSchema={agentFormSchema}
         models={bolnaModels}
         voices={bolnaVoices}
         providers={availableProviders}
         phoneNumbers={exotelPhoneNumbers}
         knowledgeBaseItems={knowledgeBaseItems}
+        bolnaModels={bolnaModels}
+        bolnaVoices={bolnaVoices}
       />
     </div>
   );

@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { Pagination } from "@/components/Pagination";
+import { EmptyState } from "@/components/EmptyState";
+import { SkeletonTable } from "@/components/SkeletonTable";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -294,6 +296,33 @@ export default function CallHistory() {
     },
   });
 
+  // Filter calls based on search and status
+  const filteredCalls = useMemo(() => {
+    return calls.filter(call => {
+      const matchesSearch = 
+        call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        call.contactPhone?.includes(searchQuery) ||
+        call.agentId?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'all' || call.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [calls, searchQuery, statusFilter]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredCalls.length / itemsPerPage);
+  const paginatedCalls = filteredCalls.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+  const showingFrom = filteredCalls.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const showingTo = Math.min(currentPage * itemsPerPage, filteredCalls.length);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   // Calculate statistics
   const stats = useMemo(() => {

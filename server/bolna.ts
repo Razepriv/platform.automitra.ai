@@ -46,6 +46,7 @@ interface BolnaAgentConfigV2 {
           top_k: number;
           temperature: number;
           request_json: boolean;
+          rag_ids?: string[]; // Knowledgebase RAG IDs for RAG functionality
         };
         synthesizer?: {
           provider: string;
@@ -130,9 +131,31 @@ interface BolnaModel {
 
 interface BolnaKnowledgeBase {
   rag_id: string;
+  file_name?: string;
   name?: string;
   created_at?: string;
-  status?: string;
+  updated_at?: string;
+  humanized_created_at?: string;
+  vector_id?: string;
+  status?: 'processing' | 'processed' | 'error';
+  chunk_size?: number;
+  similarity_top_k?: number;
+  overlapping?: number;
+  source_type?: 'pdf' | 'url';
+}
+
+interface BolnaBatch {
+  batch_id: string;
+  humanized_created_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  status: 'scheduled' | 'created' | 'queued' | 'executed';
+  scheduled_at?: string;
+  from_phone_number?: string;
+  file_name?: string;
+  valid_contacts?: number;
+  total_contacts?: number;
+  execution_status?: Record<string, number>;
 }
 
 interface BolnaAgentConfig {
@@ -646,6 +669,10 @@ export class BolnaClient {
               request_json: true,
               summarization_details: null,
               extraction_details: null,
+              // Include knowledgebase RAG IDs if available
+              ...(updates.knowledgeBaseIds && updates.knowledgeBaseIds.length > 0 && {
+                rag_ids: updates.knowledgeBaseIds
+              }),
             },
           },
           synthesizer: synthesizerConfig,
@@ -1083,6 +1110,56 @@ export class BolnaClient {
     await this.request<void>(`/voices/${voiceId}`, {
       method: "DELETE",
     });
+  }
+
+  // Batch Calling for Campaigns
+  async createBatch(data: {
+    agent_id: string;
+    file: File | Buffer | any;
+    from_phone_number?: string;
+    scheduled_at?: string;
+    fileName?: string;
+  }): Promise<BolnaBatch> {
+    this.ensureConfigured();
+    
+    const FormData = (await import('form-data')).default;
+    const formData = new FormData();
+    
+    formData.append('agent_id', data.agent_id);
+    if (data.from_phone_number) formData.append('from_phone_number', data.from_phone_number);
+    if (data.scheduled_at) formData.append('scheduled_at', data.scheduled_at);
+    
+    if (Buffer.isBuffer(data.file)) {
+      formData.append('file', data.file, data.fileName || 'batch.csv');
+    } else if (data.file && typeof data.file === 'object' && 'buffer' in data.file) {
+      formData.append('file', data.file.buffer, data.file.originalname || data.fileName || 'batch.csv');
+    } else {
+      throw new Error('Invalid file type. Expected Buffer or multer file object.');
+    }
+
+    const url = `${this.baseUrl}/batches`;
+    const headers: Record<string, string> = {
+      "Authorization": `Bearer ${this.apiKey}`,
+      ...formData.getHeaders(),
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData as any,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Bolna API error (${response.status}): ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
+  async getBatch(batchId: string): Promise<BolnaBatch> {
+    this.ensureConfigured();
+    return await this.request<BolnaBatch>(`/batches/${batchId}`);
   }
 }
 

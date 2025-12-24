@@ -1486,9 +1486,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let kbs;
       if (agentId) {
-        kbs = await storage.getKnowledgeBasesByAgent(agentId, user.organizationId);
+        kbs = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
       } else {
-        kbs = await storage.getKnowledgeBasesByOrganization(user.organizationId);
+        kbs = await storage.getKnowledgeBase(user.organizationId);
       }
 
       res.json(kbs);
@@ -1501,7 +1501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get knowledge base details
   app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const kb = await storage.getKnowledgeBase(req.params.id, req.user.organizationId);
+      const kb = await storage.getKnowledgeBaseItem(req.params.id, req.user.organizationId);
 
       if (!kb) {
         return res.status(404).json({ message: "Knowledge base not found" });
@@ -1903,53 +1903,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Knowledge Base routes
-  app.get('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      const knowledge = await storage.getKnowledgeBase(user.organizationId);
-      
-      // Defensive validation
-      const validKnowledge = knowledge.filter(k => k.organizationId === user.organizationId);
-      if (validKnowledge.length !== knowledge.length) {
-        console.error("WARNING: Storage returned cross-tenant knowledge base data");
-      }
-      
-      res.json(validKnowledge);
-    } catch (error) {
-      console.error("Error fetching knowledge base:", error);
-      res.status(500).json({ message: "Failed to fetch knowledge base" });
-    }
-  });
-
-  app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      const item = await storage.getKnowledgeBaseItem(req.params.id, user.organizationId);
-      if (!item) {
-        return res.status(404).json({ message: "Knowledge base item not found" });
-      }
-      
-      // Defensive validation
-      if (item.organizationId !== user.organizationId) {
-        console.error("WARNING: Storage returned cross-tenant knowledge base item");
-        return res.status(404).json({ message: "Knowledge base item not found" });
-      }
-      
-      res.json(item);
-    } catch (error) {
-      console.error("Error fetching knowledge base item:", error);
-      res.status(500).json({ message: "Failed to fetch knowledge base item" });
-    }
-  });
 
   app.post('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
     try {
@@ -2257,7 +2210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Campaign run endpoint - trigger outbound calls for a campaign
+  // Campaign run endpoint - trigger outbound calls for a campaign using Bolna Batch API
   app.post('/api/campaigns-run', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -2266,7 +2219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       
-      const { campaignId } = req.body;
+      const { campaignId, scheduledAt } = req.body;
       if (!campaignId) {
         return res.status(400).json({ message: "campaignId required" });
       }
@@ -2278,10 +2231,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get leads for this campaign
       const campaignLeads = await storage.getLeads(user.organizationId);
-      const campaignLeadsList = campaignLeads.filter(l => l.campaignId === campaignId);
+      const campaignLeadsList = campaignLeads.filter(l => l.campaignId === campaignId && l.phone);
       
       if (campaignLeadsList.length === 0) {
-        return res.status(400).json({ message: "No leads in campaign" });
+        return res.status(400).json({ message: "No leads with phone numbers in campaign" });
       }
       
       // Get agents for this organization
@@ -2296,88 +2249,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No phone numbers available" });
       }
       
-      const results = [];
       const defaultAgent = agents[0];
       const defaultPhone = phoneNumbers[0];
       
-      // Initiate calls for each lead (limit to 100 per batch)
-      for (const lead of campaignLeadsList.slice(0, 100)) {
-        if (!lead.phone) continue;
-        
-        try {
-          const callData: InsertCall = {
-            organizationId: user.organizationId,
-            leadId: lead.id,
-            agentId: lead.assignedAgentId || defaultAgent.id,
-            phoneNumberId: defaultPhone.id,
-            contactName: lead.name,
-            contactPhone: lead.phone,
-            callType: 'outbound',
-            direction: 'outbound',
-            status: 'initiated',
-          };
-          
-          const call = await storage.createCall(callData);
-          
-          // Initiate call via Bolna
-          if (defaultAgent.bolnaAgentId) {
-            try {
-              const bolnaResult = await bolnaClient.initiateOutboundCall({
-                agentId: defaultAgent.bolnaAgentId,
-                to: lead.phone,
-                from: defaultPhone.phoneNumber,
-                metadata: {
-                  callId: call.id,
-                  organizationId: user.organizationId,
-                  leadId: lead.id,
-                  campaignId: campaignId,
-                },
-              });
-              
-              // Update call with Bolna ID
-              await storage.updateCall(call.id, user.organizationId, {
-                bolnaCallId: bolnaResult.execution_id || bolnaResult.call_id,
-              });
-              
-              // Start polling
-              if (bolnaResult.execution_id) {
-                startCallPolling(
-                  bolnaResult.execution_id,
-                  call.id,
-                  user.organizationId,
-                  (app as any).emitCallUpdate,
-                  (app as any).emitMetricsUpdate
-                );
-              }
-              
-              // Emit real-time update
-              if ((app as any).emitCallCreated) {
-                const updatedCall = await storage.getCall(call.id, user.organizationId);
-                if (updatedCall) {
-                  (app as any).emitCallCreated(user.organizationId, updatedCall);
-                }
-              }
-              
-              results.push({ leadId: lead.id, status: "initiated", callId: call.id });
-            } catch (bolnaError: any) {
-              await storage.updateCall(call.id, user.organizationId, {
-                status: 'failed',
-                outcome: bolnaError.message,
-              });
-              results.push({ leadId: lead.id, status: "failed", error: bolnaError.message });
-            }
-          } else {
-            results.push({ leadId: lead.id, status: "failed", error: "Agent not synced to Bolna" });
-          }
-        } catch (error: any) {
-          results.push({ leadId: lead.id, status: "failed", error: error.message });
-        }
+      if (!defaultAgent.bolnaAgentId) {
+        return res.status(400).json({ message: "Default agent not synced to Bolna. Please sync the agent first." });
       }
       
-      res.json({ success: true, results, total: results.length });
-    } catch (error) {
+      // Generate CSV file for batch calling
+      // Bolna expects CSV with contact_number column and optional variables
+      const csvData = campaignLeadsList.map(lead => ({
+        contact_number: lead.phone,
+        contact_name: lead.name || '',
+        contact_email: lead.email || '',
+        contact_company: lead.company || '',
+        lead_id: lead.id,
+        campaign_id: campaignId,
+        organization_id: user.organizationId,
+      }));
+      
+      const csvContent = Papa.unparse(csvData);
+      const csvBuffer = Buffer.from(csvContent, 'utf-8');
+      
+      // Create batch file object
+      const batchFile = {
+        buffer: csvBuffer,
+        originalname: `campaign_${campaignId}_${Date.now()}.csv`,
+        filename: `campaign_${campaignId}_${Date.now()}.csv`,
+        mimetype: 'text/csv',
+        size: csvBuffer.length,
+      };
+      
+      try {
+        // Create batch using Bolna Batch API
+        const batchResult = await bolnaClient.createBatch({
+          agent_id: defaultAgent.bolnaAgentId,
+          file: batchFile,
+          from_phone_number: defaultPhone.phoneNumber,
+          scheduled_at: scheduledAt || undefined,
+          fileName: batchFile.originalname,
+        });
+        
+        console.log(`[Campaign Run] Batch created: ${batchResult.batch_id} for campaign ${campaignId}`);
+        
+        // Create call records for tracking (we'll update them via webhooks)
+        const callRecords = [];
+        for (const lead of campaignLeadsList) {
+          try {
+            const callData: InsertCall = {
+              organizationId: user.organizationId,
+              leadId: lead.id,
+              agentId: lead.assignedAgentId || defaultAgent.id,
+              phoneNumberId: defaultPhone.id,
+              contactName: lead.name,
+              contactPhone: lead.phone,
+              callType: 'outbound',
+              direction: 'outbound',
+              status: scheduledAt ? 'scheduled' : 'queued',
+              metadata: {
+                batchId: batchResult.batch_id,
+                campaignId: campaignId,
+              },
+            };
+            
+            const call = await storage.createCall(callData);
+            callRecords.push(call);
+          } catch (error: any) {
+            console.error(`[Campaign Run] Failed to create call record for lead ${lead.id}:`, error);
+          }
+        }
+        
+        // Emit real-time update
+        if ((app as any).emitCampaignUpdate) {
+          (app as any).emitCampaignUpdate(user.organizationId, {
+            campaignId,
+            batchId: batchResult.batch_id,
+            status: batchResult.status,
+            totalLeads: campaignLeadsList.length,
+          });
+        }
+        
+        res.json({ 
+          success: true, 
+          batchId: batchResult.batch_id,
+          batchStatus: batchResult.status,
+          totalLeads: campaignLeadsList.length,
+          scheduledAt: batchResult.scheduled_at || scheduledAt,
+          message: `Batch created successfully. ${campaignLeadsList.length} calls ${scheduledAt ? 'scheduled' : 'queued'} for execution.`
+        });
+      } catch (batchError: any) {
+        console.error("[Campaign Run] Batch API error:", batchError);
+        res.status(500).json({ 
+          message: "Failed to create batch", 
+          error: batchError.message 
+        });
+      }
+    } catch (error: any) {
       console.error("Error running campaign:", error);
-      res.status(500).json({ message: "Failed to run campaign" });
+      res.status(500).json({ message: "Failed to run campaign", error: error.message });
     }
   });
 

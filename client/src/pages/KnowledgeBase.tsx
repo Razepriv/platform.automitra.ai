@@ -470,24 +470,22 @@ export default function KnowledgeBase() {
                       Edit
                     </Button>
                     {item.agentId && agents.find(a => a.id === item.agentId)?.bolnaAgentId && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => syncToBolnaMutation.mutate(item.agentId!)}
-                              disabled={syncToBolnaMutation.isPending}
-                            >
-                              <Zap className="w-3 h-3 mr-1" />
-                              Sync
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Sync all knowledge base items for this agent to Bolna as unified PDF</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => syncToBolnaMutation.mutate(item.agentId!)}
+                            disabled={syncToBolnaMutation.isPending}
+                          >
+                            <Zap className="w-3 h-3 mr-1" />
+                            Sync
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Sync all knowledge base items for this agent to Bolna as unified PDF</p>
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                     <Button
                       variant="outline"
