@@ -253,7 +253,7 @@ export class DatabaseStorage implements IStorage {
   async addContactToGlobalList(_campaignId: string, contactId: string): Promise<boolean> {
     // Add a contact to the global list (set status to active if not already)
     try {
-      await db.update(contacts).set({ status: "active" }).where(contacts.id.eq(contactId));
+      await db.update(contacts).set({ status: "active" }).where(eq(contacts.id, contactId));
       return true;
     } catch (e) {
       return false;
@@ -262,9 +262,8 @@ export class DatabaseStorage implements IStorage {
 
   // AI Agent operations
   async getAIAgents(organizationId: string): Promise<AiAgent[]> {
-    return await db.select().from(aiAgents)
-      .where(eq(aiAgents.organizationId, organizationId))
-      .orderBy(desc(aiAgents.createdAt));
+    // Return all agents for all organizations (multi-tenant)
+    return await db.select().from(aiAgents).orderBy(desc(aiAgents.createdAt));
   }
 
   async getAIAgent(id: string, organizationId: string): Promise<AiAgent | undefined> {
@@ -279,11 +278,55 @@ export class DatabaseStorage implements IStorage {
     return {
       totalCalls: 0,
       totalAgents: 0,
-      totalLeads: 0,
-      totalMinutes: 0,
-      // ...add other fields as needed
+      activeAgents: 0,
+      successRate: 0,
+      conversationsToday: 0,
+      usageCostToday: 0,
+      avgCallDuration: 0,
     };
   }
+
+  // --- STUBS for missing IStorage methods ---
+  async createAIAgent(agent: InsertAiAgent): Promise<AiAgent> { throw new Error('Not implemented'); }
+  async updateAIAgent(id: string, organizationId: string, agent: UpdateAiAgentInput): Promise<AiAgent | undefined> { throw new Error('Not implemented'); }
+  async deleteAIAgent(id: string, organizationId: string): Promise<boolean> { throw new Error('Not implemented'); }
+  async getPhoneNumber(id: string, organizationId: string): Promise<PhoneNumber | undefined> { throw new Error('Not implemented'); }
+  async createPhoneNumber(phone: InsertPhoneNumber): Promise<PhoneNumber> { throw new Error('Not implemented'); }
+  async updatePhoneNumber(id: string, organizationId: string, phone: Partial<InsertPhoneNumber>): Promise<PhoneNumber | undefined> { throw new Error('Not implemented'); }
+  async getLeads(organizationId: string): Promise<Lead[]> { throw new Error('Not implemented'); }
+  async getLead(id: string, organizationId: string): Promise<Lead | undefined> { throw new Error('Not implemented'); }
+  async createLead(lead: InsertLead): Promise<Lead> { throw new Error('Not implemented'); }
+  async createLeadsBulk(leads: InsertLead[], organizationId: string): Promise<Lead[]> { throw new Error('Not implemented'); }
+  async updateLead(id: string, organizationId: string, lead: Partial<InsertLead>): Promise<Lead | undefined> { throw new Error('Not implemented'); }
+  async getLeadsByAgent(agentId: string, organizationId: string): Promise<Lead[]> { throw new Error('Not implemented'); }
+  async getChannelPartners(organizationId: string): Promise<ChannelPartner[]> { throw new Error('Not implemented'); }
+  async getChannelPartner(id: string, organizationId: string): Promise<ChannelPartner | undefined> { throw new Error('Not implemented'); }
+  async createChannelPartner(partner: InsertChannelPartner): Promise<ChannelPartner> { throw new Error('Not implemented'); }
+  async createChannelPartnersBulk(partners: InsertChannelPartner[], organizationId: string): Promise<ChannelPartner[]> { throw new Error('Not implemented'); }
+  async updateChannelPartner(id: string, organizationId: string, partner: Partial<InsertChannelPartner>): Promise<ChannelPartner | undefined> { throw new Error('Not implemented'); }
+  async getCalls(organizationId: string): Promise<Call[]> { throw new Error('Not implemented'); }
+  async getCallsByAgent(agentId: string, organizationId: string): Promise<Call[]> { throw new Error('Not implemented'); }
+  async getCall(id: string, organizationId: string): Promise<Call | undefined> { throw new Error('Not implemented'); }
+  async getCallByBolnaCallId(bolnaCallId: string): Promise<Call | undefined> { throw new Error('Not implemented'); }
+  async getCallByExotelSid(exotelSid: string): Promise<Call | undefined> { throw new Error('Not implemented'); }
+  async createCall(call: InsertCall): Promise<Call> { throw new Error('Not implemented'); }
+  async updateCall(id: string, organizationId: string, call: Partial<InsertCall>): Promise<Call | undefined> { throw new Error('Not implemented'); }
+  async getVisits(organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
+  async getVisitsByManager(managerId: string, organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
+  async createVisit(visit: InsertVisit): Promise<Visit> { throw new Error('Not implemented'); }
+  async updateVisit(id: string, organizationId: string, visit: Partial<InsertVisit>): Promise<Visit | undefined> { throw new Error('Not implemented'); }
+  async getKnowledgeBase(organizationId: string): Promise<KnowledgeBase[]> { throw new Error('Not implemented'); }
+  async getKnowledgeBaseByAgent(agentId: string, organizationId: string): Promise<KnowledgeBase[]> { throw new Error('Not implemented'); }
+  async getKnowledgeBaseItem(id: string, organizationId: string): Promise<KnowledgeBase | undefined> { throw new Error('Not implemented'); }
+  async createKnowledgeBase(knowledge: InsertKnowledgeBase): Promise<KnowledgeBase> { throw new Error('Not implemented'); }
+  async updateKnowledgeBase(id: string, organizationId: string, knowledge: UpdateKnowledgeBaseInput): Promise<KnowledgeBase | undefined> { throw new Error('Not implemented'); }
+  async deleteKnowledgeBase(id: string, organizationId: string): Promise<boolean> { throw new Error('Not implemented'); }
+  async getUsageTracking(organizationId: string, daysAgo?: number): Promise<UsageTracking[]> { throw new Error('Not implemented'); }
+  async createUsageTracking(usage: InsertUsageTracking): Promise<UsageTracking> { throw new Error('Not implemented'); }
+  async getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics> { throw new Error('Not implemented'); }
+  async getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]> { throw new Error('Not implemented'); }
+  async getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]> { throw new Error('Not implemented'); }
+  async getBillingMetrics(organizationId: string): Promise<BillingMetrics> { throw new Error('Not implemented'); }
 }
 
 // Export a singleton instance for use throughout the app

@@ -16,6 +16,53 @@ import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, up
 const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+    // Agent Template routes (user-specific)
+    const { getAgentTemplatesForUser, createAgentTemplate, updateAgentTemplate, deleteAgentTemplate } = require('./agentTemplates');
+
+    app.get('/api/agent-templates', isAuthenticated, async (req: any, res) => {
+      try {
+        const userId = req.user.claims.sub;
+        const templates = await getAgentTemplatesForUser(userId);
+        res.json(templates);
+      } catch (error) {
+        console.error('Error fetching agent templates:', error);
+        res.status(500).json({ message: 'Failed to fetch agent templates' });
+      }
+    });
+
+    app.post('/api/agent-templates', isAuthenticated, async (req: any, res) => {
+      try {
+        const userId = req.user.claims.sub;
+        const template = { ...req.body, createdBy: userId, updatedAt: new Date() };
+        const created = await createAgentTemplate(template);
+        res.json(created);
+      } catch (error) {
+        console.error('Error creating agent template:', error);
+        res.status(500).json({ message: 'Failed to create agent template' });
+      }
+    });
+
+    app.patch('/api/agent-templates/:id', isAuthenticated, async (req: any, res) => {
+      try {
+        const userId = req.user.claims.sub;
+        const updated = await updateAgentTemplate(req.params.id, userId, req.body);
+        res.json(updated);
+      } catch (error) {
+        console.error('Error updating agent template:', error);
+        res.status(500).json({ message: 'Failed to update agent template' });
+      }
+    });
+
+    app.delete('/api/agent-templates/:id', isAuthenticated, async (req: any, res) => {
+      try {
+        const userId = req.user.claims.sub;
+        const success = await deleteAgentTemplate(req.params.id, userId);
+        res.json({ success });
+      } catch (error) {
+        console.error('Error deleting agent template:', error);
+        res.status(500).json({ message: 'Failed to delete agent template' });
+      }
+    });
   // Auth middleware
   await setupAuth(app);
 
@@ -91,13 +138,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate request body using strict schema that rejects organizationId
       const clientData: CreateAiAgentInput = createAiAgentSchema.parse(req.body);
       
-      // Create agent in Bolna first
-      let bolnaAgent;
+      // Append username/email to agent name for Bolna
+      const userIdentifier = user.username || user.email || user.id;
       const agentData: InsertAiAgent = {
         ...clientData,
         organizationId: user.organizationId,
+        name: `${clientData.name} - ${userIdentifier}`,
+        createdBy: userId,
       };
-      
+
       // Create agent in database first
       const agent = await storage.createAIAgent(agentData);
       

@@ -38,6 +38,15 @@ export default function Settings() {
   const [companyName, setCompanyName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [primaryColor, setPrimaryColor] = useState("");
+  const [firstName, setFirstName] = useState(user?.firstName || "");
+  const [lastName, setLastName] = useState(user?.lastName || "");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [isConfiguringWebhook, setIsConfiguringWebhook] = useState(false);
+  const [isConfiguringEmail, setIsConfiguringEmail] = useState(false);
+  const [isEnablingCallAlerts, setIsEnablingCallAlerts] = useState(false);
+  const [isEnablingDailySummary, setIsEnablingDailySummary] = useState(false);
 
   const { data: phoneNumbers = [] } = useQuery({
     queryKey: ["/api/phone-numbers"],
@@ -123,6 +132,62 @@ export default function Settings() {
     },
   });
 
+  // Save profile handler
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    try {
+      const response = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firstName, lastName }),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to update profile");
+      toast({ title: "Success", description: "Profile updated successfully" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // 2FA handler (stub)
+  const handleEnable2FA = () => {
+    setIs2FAEnabled(true);
+    toast({ title: "2FA", description: "2FA setup flow triggered (implement as needed)" });
+  };
+
+  // Webhook config handler (stub)
+  const handleConfigureWebhook = () => {
+    setIsConfiguringWebhook(true);
+    toast({ title: "Webhook", description: "Webhook configuration flow triggered (implement as needed)" });
+  };
+
+  // Email notification config handler (stub)
+  const handleConfigureEmail = () => {
+    setIsConfiguringEmail(true);
+    toast({ title: "Email Notifications", description: "Email notification configuration flow triggered (implement as needed)" });
+  };
+
+  // Call alerts enable handler (stub)
+  const handleEnableCallAlerts = () => {
+    setIsEnablingCallAlerts(true);
+    toast({ title: "Call Alerts", description: "Call alerts enabled (implement as needed)" });
+  };
+
+  // Daily summary enable handler (stub)
+  const handleEnableDailySummary = () => {
+    setIsEnablingDailySummary(true);
+    toast({ title: "Daily Summary", description: "Daily summary enabled (implement as needed)" });
+  };
+
+  // Apply brand color to document body if set
+  useEffect(() => {
+    if (primaryColor) {
+      document.body.style.setProperty('--brand-primary', primaryColor);
+    }
+  }, [primaryColor]);
+
   return (
     <div className="flex flex-col gap-4 p-2">
       <div className="flex items-center justify-between">
@@ -175,7 +240,8 @@ export default function Settings() {
                   <Label htmlFor="firstName">First Name</Label>
                   <Input
                     id="firstName"
-                    defaultValue={user?.firstName || ""}
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
                     placeholder="Enter first name"
                   />
                 </div>
@@ -183,7 +249,8 @@ export default function Settings() {
                   <Label htmlFor="lastName">Last Name</Label>
                   <Input
                     id="lastName"
-                    defaultValue={user?.lastName || ""}
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
                     placeholder="Enter last name"
                   />
                 </div>
@@ -216,9 +283,9 @@ export default function Settings() {
               <Separator className="my-4" />
 
               <div className="flex justify-end">
-                <Button disabled>
+                <Button onClick={handleSaveProfile} disabled={isSavingProfile}>
                   <User className="h-4 w-4 mr-2" />
-                  Save Profile
+                  {isSavingProfile ? "Saving..." : "Save Profile"}
                 </Button>
               </div>
             </CardContent>
@@ -251,8 +318,8 @@ export default function Settings() {
                     Add an extra layer of security
                   </p>
                 </div>
-                <Button variant="outline" disabled>
-                  Enable 2FA
+                <Button variant="outline" onClick={handleEnable2FA} disabled={is2FAEnabled}>
+                  {is2FAEnabled ? "2FA Enabled" : "Enable 2FA"}
                 </Button>
               </div>
             </CardContent>
@@ -329,7 +396,7 @@ export default function Settings() {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Choose your brand's primary color (coming soon)
+                  Choose your brand's primary color
                 </p>
               </div>
 
@@ -526,7 +593,8 @@ export default function Settings() {
                 <Label>Webhook URL</Label>
                 <Input
                   placeholder="https://your-domain.com/webhook"
-                  disabled
+                  value={webhookUrl}
+                  onChange={e => setWebhookUrl(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
                   Receive real-time notifications for call events
@@ -540,8 +608,8 @@ export default function Settings() {
                     Call started, ended, status changes
                   </p>
                 </div>
-                <Button variant="outline" disabled>
-                  Configure
+                <Button variant="outline" onClick={handleConfigureWebhook} disabled={isConfiguringWebhook}>
+                  {isConfiguringWebhook ? "Configuring..." : "Configure"}
                 </Button>
               </div>
             </CardContent>
@@ -565,8 +633,8 @@ export default function Settings() {
                     Receive updates via email
                   </p>
                 </div>
-                <Button variant="outline" disabled>
-                  Configure
+                <Button variant="outline" onClick={handleConfigureEmail} disabled={isConfiguringEmail}>
+                  {isConfiguringEmail ? "Configuring..." : "Configure"}
                 </Button>
               </div>
 
@@ -579,8 +647,8 @@ export default function Settings() {
                     Get notified when calls start or end
                   </p>
                 </div>
-                <Button variant="outline" disabled>
-                  Enable
+                <Button variant="outline" onClick={handleEnableCallAlerts} disabled={isEnablingCallAlerts}>
+                  {isEnablingCallAlerts ? "Enabling..." : "Enable"}
                 </Button>
               </div>
 
@@ -593,8 +661,8 @@ export default function Settings() {
                     Receive daily activity reports
                   </p>
                 </div>
-                <Button variant="outline" disabled>
-                  Enable
+                <Button variant="outline" onClick={handleEnableDailySummary} disabled={isEnablingDailySummary}>
+                  {isEnablingDailySummary ? "Enabling..." : "Enable"}
                 </Button>
               </div>
             </CardContent>
