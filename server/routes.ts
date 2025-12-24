@@ -2082,9 +2082,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Update agent with Bolna knowledge base ID (store in bolnaConfig)
-      const agent = await storage.getAIAgent(agentId, user.organizationId);
       const updatedBolnaConfig = {
-        ...(agent?.bolnaConfig as any || {}),
+        ...(agent.bolnaConfig as any || {}),
         knowledgeBaseRagId: bolnaKB.rag_id,
       };
       await storage.updateAIAgent(agentId, user.organizationId, {
