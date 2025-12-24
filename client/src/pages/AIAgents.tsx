@@ -142,7 +142,7 @@ export default function AIAgents() {
   // Fetch Bolna voices and models
   const { data: bolnaVoices = [], isLoading: loadingVoices } = useQuery<BolnaVoice[]>({
     queryKey: ['/api/bolna/voices', voiceProviderFilter],
-    enabled: isCreateDialogOpen || isEditDialogOpen,
+    enabled: isDialogOpen,
     queryFn: async () => {
       const url = voiceProviderFilter === 'all' 
         ? '/api/bolna/voices'
@@ -166,29 +166,29 @@ export default function AIAgents() {
 
   const { data: bolnaModels = [], isLoading: loadingModels } = useQuery<BolnaModel[]>({
     queryKey: ['/api/bolna/models'],
-    enabled: isCreateDialogOpen || isEditDialogOpen,
+    enabled: isDialogOpen,
   });
 
   // Fetch Exotel phone numbers
   const { data: exotelPhoneNumbers = [], isLoading: loadingPhoneNumbers, refetch: refetchPhoneNumbers } = useQuery<PhoneNumber[]>({
     queryKey: ['/api/phone-numbers'],
-    enabled: isCreateDialogOpen || isEditDialogOpen,
+    enabled: isDialogOpen,
   });
 
   // Auto-sync phone numbers from Exotel when dialog opens if none exist
   useEffect(() => {
-    if ((isCreateDialogOpen || isEditDialogOpen) && !loadingPhoneNumbers && exotelPhoneNumbers.length === 0) {
+    if (isDialogOpen && !loadingPhoneNumbers && exotelPhoneNumbers.length === 0) {
       // Trigger sync in background
       fetch('/api/phone-numbers/sync')
         .then(() => refetchPhoneNumbers())
         .catch(err => console.error('Failed to sync phone numbers:', err));
     }
-  }, [isCreateDialogOpen, isEditDialogOpen, loadingPhoneNumbers, exotelPhoneNumbers.length, refetchPhoneNumbers]);
+  }, [isDialogOpen, loadingPhoneNumbers, exotelPhoneNumbers.length, refetchPhoneNumbers]);
 
   // Fetch knowledge base items
   const { data: knowledgeBaseItems = [], isLoading: loadingKnowledgeBase } = useQuery<KnowledgeBaseType[]>({
     queryKey: ['/api/knowledge-base'],
-    enabled: isCreateDialogOpen || isEditDialogOpen,
+    enabled: isDialogOpen,
   });
 
   // Handler to open dialog for create
@@ -209,11 +209,11 @@ export default function AIAgents() {
 
   // Reset voice provider filter when dialog opens
   useEffect(() => {
-    if (isCreateDialogOpen) {
+    if (isDialogOpen && dialogMode === "create") {
       setVoiceProviderFilter('all');
       // Don't set voiceProvider to 'all' - keep the default 'elevenlabs'
     }
-  }, [isCreateDialogOpen, form]);
+  }, [isDialogOpen, dialogMode, form]);
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
@@ -318,7 +318,7 @@ export default function AIAgents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-      setIsCreateDialogOpen(false);
+      setIsDialogOpen(false);
       form.reset();
       toast({
         title: "Success",
