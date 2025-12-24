@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings as SettingsIcon,
@@ -24,6 +25,8 @@ import {
   Edit,
   Trash2,
   Users,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 import {
   Tabs,
@@ -55,7 +58,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/useAuth";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
 
 export default function Settings() {
@@ -78,6 +81,9 @@ export default function Settings() {
   const [logoPreview, setLogoPreview] = useState<string>("");
   const [isTeamMemberDialogOpen, setIsTeamMemberDialogOpen] = useState(false);
   const [editingTeamMember, setEditingTeamMember] = useState<any>(null);
+  const [aiLeadAssignerEnabled, setAiLeadAssignerEnabled] = useState(false);
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [isSavingAISettings, setIsSavingAISettings] = useState(false);
   const [teamMemberForm, setTeamMemberForm] = useState({
     email: "",
     password: "",
@@ -852,6 +858,114 @@ export default function Settings() {
 
         {/* Integration Settings */}
         <TabsContent value="integration" className="space-y-4">
+          {/* AI Lead Assigner */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <CardTitle>AI Lead Assigner</CardTitle>
+              </div>
+              <CardDescription>
+                Automatically assign leads to pipelines by analyzing call transcripts using AI
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="font-medium">Enable AI Lead Assigner</p>
+                  <p className="text-sm text-muted-foreground">
+                    AI will review call transcripts and automatically assign leads to appropriate pipeline stages
+                  </p>
+                </div>
+                <Switch
+                  checked={aiLeadAssignerEnabled}
+                  onCheckedChange={async (checked) => {
+                    if (checked && !openaiApiKey) {
+                      toast({
+                        title: "API Key Required",
+                        description: "Please enter your OpenAI API key first",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    setIsSavingAISettings(true);
+                    try {
+                      const response = await apiRequest("PATCH", "/api/user/ai-lead-assigner", {
+                        enabled: checked,
+                        openaiApiKey: openaiApiKey || undefined,
+                      });
+                      setAiLeadAssignerEnabled(checked);
+                      toast({
+                        title: "Success",
+                        description: `AI Lead Assigner ${checked ? "enabled" : "disabled"}`,
+                      });
+                      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+                    } catch (error: any) {
+                      toast({
+                        title: "Error",
+                        description: error.message || "Failed to update AI Lead Assigner settings",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsSavingAISettings(false);
+                    }
+                  }}
+                  disabled={isSavingAISettings}
+                />
+              </div>
+
+              {aiLeadAssignerEnabled && (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <Label htmlFor="openaiApiKey">OpenAI API Key *</Label>
+                    <Input
+                      id="openaiApiKey"
+                      type="password"
+                      placeholder="sk-..."
+                      value={openaiApiKey}
+                      onChange={(e) => setOpenaiApiKey(e.target.value)}
+                      onBlur={async () => {
+                        if (openaiApiKey && openaiApiKey.length > 0) {
+                          setIsSavingAISettings(true);
+                          try {
+                            await apiRequest("PATCH", "/api/user/ai-lead-assigner", { openaiApiKey });
+                            toast({
+                              title: "API Key Saved",
+                              description: "Your OpenAI API key has been securely stored",
+                            });
+                          } catch (error: any) {
+                            toast({
+                              title: "Error",
+                              description: error.message || "Failed to save API key",
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setIsSavingAISettings(false);
+                          }
+                        }
+                      }}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Your API key is stored securely and used only for analyzing call transcripts to assign leads
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Get your API key from{" "}
+                      <a
+                        href="https://platform.openai.com/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        OpenAI Platform
+                      </a>
+                    </p>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Agent Provider Integration</CardTitle>

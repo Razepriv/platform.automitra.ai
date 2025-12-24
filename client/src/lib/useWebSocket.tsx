@@ -61,6 +61,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       if (user.organizationId) {
         socket.emit('join:organization', user.organizationId);
       }
+      
+      // Join user-specific room for notifications
+      if (user.id) {
+        socket.emit('join:user', user.id);
+      }
     });
 
     socket.on('disconnect', () => {
@@ -74,8 +79,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      if (socket && user.organizationId) {
-        socket.emit('leave:organization', user.organizationId);
+      if (socket) {
+        if (user.organizationId) {
+          socket.emit('leave:organization', user.organizationId);
+        }
+        if (user.id) {
+          socket.emit('leave:user', user.id);
+        }
         socket.disconnect();
         socketRef.current = null;
       }

@@ -228,6 +228,15 @@ async function ensureAppUser(user: SupabaseUser) {
     role: "admin",
   });
 
+  // Create welcome notification for new users
+  try {
+    const { createWelcomeNotification } = await import('./utils/notifications');
+    await createWelcomeNotification(existing.id, organization.id);
+  } catch (error) {
+    console.error("Error creating welcome notification:", error);
+    // Don't fail user creation if notification fails
+  }
+
   return existing;
 }
 
@@ -254,7 +263,7 @@ async function ensureBasicLoginUser(options: {
 
   const safeId = `basic-${lowerEmail.replace(/[^a-z0-9.-]/gi, "-")}`;
 
-  return storage.upsertUser({
+  const newUser = await storage.upsertUser({
     id: safeId,
     organizationId: organization.id,
     email: lowerEmail,
@@ -262,6 +271,17 @@ async function ensureBasicLoginUser(options: {
     lastName,
     role: resolvedRole,
   });
+
+  // Create welcome notification for new users
+  try {
+    const { createWelcomeNotification } = await import('./utils/notifications');
+    await createWelcomeNotification(newUser.id, organization.id);
+  } catch (error) {
+    console.error("Error creating welcome notification:", error);
+    // Don't fail user creation if notification fails
+  }
+
+  return newUser;
 }
 
 function buildSessionUser(user: SupabaseUser, session: SupabaseSession): AuthenticatedUser {

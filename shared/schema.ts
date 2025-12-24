@@ -94,6 +94,9 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role", { length: 50 }).notNull().default('agent_manager'),
+  // AI Lead Assigner settings
+  aiLeadAssignerEnabled: boolean("ai_lead_assigner_enabled").default(false),
+  openaiApiKey: text("openai_api_key"), // Encrypted in production
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -351,6 +354,7 @@ export const leads = pgTable("leads", {
   
   // Lead status
   status: varchar("status", { length: 50 }).notNull().default('new'),
+  pipelineStage: varchar("pipeline_stage"), // References pipeline stage
   source: varchar("source", { length: 100 }),
   tags: text("tags").array(),
   

@@ -10,6 +10,7 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
 import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Wallet } from "@/components/Wallet";
+import { Notifications } from "@/components/Notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ function AuthenticatedLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-4 px-4">
+              <Notifications />
               <ThemeToggle />
               <Wallet />
             </div>

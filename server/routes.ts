@@ -10,9 +10,16 @@ import { generateAISummary, analyzeLeadQualification, generateMeetingSummary, ma
 import { bolnaClient } from "./bolna";
 import { exotelClient } from "./exotel";
 import { startCallPolling, stopCallPolling, stopAllPolling, getPollingStats } from "./callPoller";
+import { 
+  createWelcomeNotification, 
+  createCallNotification, 
+  createBillingNotification,
+  createLeadAssignedNotification 
+} from "./utils/notifications";
+import { analyzeTranscriptForLeadAssignment } from "./utils/aiLeadAssigner";
 import { db } from "./db";
-import { leads, users, type UserRole } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { leads, users, notifications, pipelines, type UserRole, type InsertNotification, type InsertPipeline } from "@shared/schema";
+import { eq, and, desc } from "drizzle-orm";
 import type { InsertLead, InsertChannelPartner, InsertCampaign, InsertCall, InsertVisit, InsertAiAgent, CreateAiAgentInput, UpdateAiAgentInput, InsertKnowledgeBase, CreateKnowledgeBaseInput, UpdateKnowledgeBaseInput, InsertPhoneNumber } from "@shared/schema";
 import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
 
@@ -981,6 +988,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedCall = await storage.updateCall(call.id, call.organizationId, updates);
+
+      // Create notification and trigger AI lead assignment when call completes
+      if (normalizedStatus === 'completed' && updatedCall) {
+        try {
+          // Get all users in the organization for notifications
+          const orgUsers = await storage.getUsersByOrganization(call.organizationId);
+          
+          // Create notifications for all users in org
+          for (const orgUser of orgUsers) {
+            const notification = await createCallNotification(
+              orgUser.id,
+              call.organizationId,
+              call.id,
+              call.direction || 'outbound',
+              call.contactName || undefined
+            );
+            if ((app as any).emitNotificationCreated) {
+              (app as any).emitNotificationCreated(call.organizationId, notification);
+            }
+          }
+
+          // Trigger AI Lead Assignment if enabled and transcript is available
+          if (updatedCall.transcription && orgUsers.length > 0) {
+            // Use the first user's API key if available and enabled
+            const userWithAI = orgUsers.find(u => u.aiLeadAssignerEnabled && u.openaiApiKey);
+            if (userWithAI && userWithAI.openaiApiKey) {
+              try {
+                // Get pipelines for the organization
+                const orgPipelines = await db.select()
+                  .from(pipelines)
+                  .where(eq(pipelines.organizationId, call.organizationId));
+
+                // Analyze transcript and assign leads
+                const assignments = await analyzeTranscriptForLeadAssignment(
+                  updatedCall.transcription,
+                  userWithAI.openaiApiKey,
+                  orgPipelines.map(p => ({ name: p.name, stage: p.stage, description: p.description || undefined }))
+                );
+
+                // Process assignments
+                for (const assignment of assignments) {
+                  if (assignment.action === 'create' && assignment.leadData) {
+                    const newLead = await storage.createLead({
+                      organizationId: call.organizationId,
+                      name: assignment.leadData.name,
+                      email: assignment.leadData.email,
+                      phone: assignment.leadData.phone || call.contactPhone,
+                      company: assignment.leadData.company,
+                      notes: assignment.leadData.notes || assignment.reason,
+                      status: 'new',
+                      pipelineStage: assignment.pipelineStage,
+                      source: 'ai_assigned',
+                    });
+                    
+                    // Create notification for lead assignment
+                    for (const orgUser of orgUsers) {
+                      const notif = await createLeadAssignedNotification(
+                        orgUser.id,
+                        call.organizationId,
+                        newLead.id,
+                        newLead.name,
+                        assignment.pipelineStage
+                      );
+                      if ((app as any).emitNotificationCreated) {
+                        (app as any).emitNotificationCreated(call.organizationId, notif);
+                      }
+                    }
+                  } else if (assignment.action === 'update' && assignment.leadId && assignment.leadData) {
+                    // Update existing lead
+                    await storage.updateLead(assignment.leadId, call.organizationId, {
+                      pipelineStage: assignment.pipelineStage,
+                      notes: assignment.reason,
+                    });
+                  }
+                }
+              } catch (aiError) {
+                console.error("Error in AI lead assignment:", aiError);
+                // Don't fail the webhook if AI assignment fails
+              }
+            }
+          }
+        } catch (notifError) {
+          console.error("Error creating call notification:", notifError);
+          // Don't fail the webhook if notification creation fails
+        }
+      }
 
       // Emit real-time updates
       if ((app as any).emitCallUpdate && updatedCall) {
@@ -2986,6 +3079,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Lead Assigner settings
+  app.patch('/api/user/ai-lead-assigner', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const { enabled, openaiApiKey } = req.body;
+      
+      const updateData: any = {};
+      if (typeof enabled === 'boolean') {
+        updateData.aiLeadAssignerEnabled = enabled;
+      }
+      if (openaiApiKey && typeof openaiApiKey === 'string' && openaiApiKey.trim().length > 0) {
+        // Validate OpenAI API key format
+        if (!openaiApiKey.startsWith('sk-')) {
+          return res.status(400).json({ message: "Invalid OpenAI API key format. Must start with 'sk-'" });
+        }
+        updateData.openaiApiKey = openaiApiKey.trim();
+      }
+
+      const updatedUser = await storage.upsertUser({
+        ...user,
+        ...updateData,
+      });
+      
+      // Don't return API key in response
+      const { openaiApiKey: _, ...safeUser } = updatedUser;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Error updating AI Lead Assigner settings:", error);
+      res.status(500).json({ message: "Failed to update AI Lead Assigner settings" });
+    }
+  });
+
+  // AI Lead Assigner settings
+  app.patch('/api/user/ai-lead-assigner', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const { enabled, openaiApiKey } = req.body;
+      
+      const updateData: any = {};
+      if (typeof enabled === 'boolean') {
+        updateData.aiLeadAssignerEnabled = enabled;
+      }
+      if (openaiApiKey && typeof openaiApiKey === 'string' && openaiApiKey.trim().length > 0) {
+        // Validate OpenAI API key format
+        if (!openaiApiKey.startsWith('sk-')) {
+          return res.status(400).json({ message: "Invalid OpenAI API key format. Must start with 'sk-'" });
+        }
+        updateData.openaiApiKey = openaiApiKey.trim();
+      }
+
+      const updatedUser = await storage.upsertUser({
+        ...user,
+        ...updateData,
+      });
+      
+      // Don't return API key in response
+      const { openaiApiKey: _, ...safeUser } = updatedUser;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Error updating AI Lead Assigner settings:", error);
+      res.status(500).json({ message: "Failed to update AI Lead Assigner settings" });
+    }
+  });
+
   // Team member management endpoints
   app.post('/api/users/team-members', isAuthenticated, async (req: any, res) => {
     try {
@@ -3298,6 +3465,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       socket.leave(`org:${organizationId}`);
       console.log(`Client ${socket.id} left organization room: org:${organizationId}`);
     });
+
+    // Join user-specific room for notifications
+    socket.on('join:user', (userId: string) => {
+      socket.join(`user:${userId}`);
+      console.log(`Client ${socket.id} joined user room: user:${userId}`);
+    });
+
+    socket.on('leave:user', (userId: string) => {
+      socket.leave(`user:${userId}`);
+      console.log(`Client ${socket.id} left user room: user:${userId}`);
+    });
     
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id);
@@ -3383,6 +3561,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const emitPhoneNumberCreated = (organizationId: string, phone: any) => {
     io.to(`org:${organizationId}`).emit('phone:created', phone);
+  };
+
+  const emitNotificationCreated = (organizationId: string, notification: any) => {
+    // Emit to specific user's room as well as org room
+    io.to(`user:${notification.userId}`).emit('notification:created', notification);
+    io.to(`org:${organizationId}`).emit('notification:created', notification);
   };
 
   const emitOrganizationUpdate = (organizationId: string, org: any) => {
@@ -3481,6 +3665,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error auto-assigning leads:", error);
       res.status(500).json({ message: "Failed to auto-assign leads" });
+    }
+  });
+
+  // Notification endpoints
+  app.get('/api/notifications', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const userNotifications = await db.select()
+        .from(notifications)
+        .where(eq(notifications.userId, userId))
+        .orderBy(desc(notifications.createdAt))
+        .limit(100);
+
+      res.json(userNotifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.patch('/api/notifications/:id/read', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const notificationId = req.params.id;
+
+      await db.update(notifications)
+        .set({ read: true })
+        .where(and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, userId)
+        ));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+      res.status(500).json({ message: "Failed to update notification" });
+    }
+  });
+
+  app.post('/api/notifications/read-all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+
+      await db.update(notifications)
+        .set({ read: true })
+        .where(and(
+          eq(notifications.userId, userId),
+          eq(notifications.read, false)
+        ));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to update notifications" });
+    }
+  });
+
+  app.delete('/api/notifications/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const notificationId = req.params.id;
+
+      await db.delete(notifications)
+        .where(and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, userId)
+        ));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+      res.status(500).json({ message: "Failed to delete notification" });
+    }
+  });
+
+  // Pipeline endpoints
+  app.get('/api/pipelines', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const orgPipelines = await db.select()
+        .from(pipelines)
+        .where(eq(pipelines.organizationId, user.organizationId))
+        .orderBy(pipelines.order);
+
+      res.json(orgPipelines);
+    } catch (error) {
+      console.error("Error fetching pipelines:", error);
+      res.status(500).json({ message: "Failed to fetch pipelines" });
+    }
+  });
+
+  app.post('/api/pipelines', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { name, description, stage, order, color, isDefault } = req.body;
+
+      if (!name || !stage) {
+        return res.status(400).json({ message: "Name and stage are required" });
+      }
+
+      const newPipeline: InsertPipeline = {
+        organizationId: user.organizationId,
+        name,
+        description,
+        stage,
+        order: order || 0,
+        color,
+        isDefault: isDefault || false,
+      };
+
+      const [created] = await db.insert(pipelines).values(newPipeline).returning();
+      res.json(created);
+    } catch (error) {
+      console.error("Error creating pipeline:", error);
+      res.status(500).json({ message: "Failed to create pipeline" });
+    }
+  });
+
+  app.patch('/api/pipelines/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const pipelineId = req.params.id;
+      const { name, description, stage, order, color, isDefault } = req.body;
+
+      const [updated] = await db.update(pipelines)
+        .set({
+          ...(name && { name }),
+          ...(description !== undefined && { description }),
+          ...(stage && { stage }),
+          ...(order !== undefined && { order }),
+          ...(color !== undefined && { color }),
+          ...(isDefault !== undefined && { isDefault }),
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(pipelines.id, pipelineId),
+          eq(pipelines.organizationId, user.organizationId)
+        ))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ message: "Pipeline not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating pipeline:", error);
+      res.status(500).json({ message: "Failed to update pipeline" });
+    }
+  });
+
+  app.delete('/api/pipelines/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const pipelineId = req.params.id;
+
+      await db.delete(pipelines)
+        .where(and(
+          eq(pipelines.id, pipelineId),
+          eq(pipelines.organizationId, user.organizationId)
+        ));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting pipeline:", error);
+      res.status(500).json({ message: "Failed to delete pipeline" });
     }
   });
 
