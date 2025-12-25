@@ -176,7 +176,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
         ...initialValues,
       });
     }
-  }, [open, initialValues, form, models, providers]);
+  }, [open, initialValues, form, bolnaModels]);
 
   // Filter voices by provider
   const filteredVoices = useMemo(() => {
