@@ -276,14 +276,20 @@ export default function AIAgents() {
   });
 
   const handleSubmit = (data: AgentFormValues) => {
-    if (dialogMode === "edit" && selectedAgent) {
+    if (dialogMode === "edit") {
+      if (!selectedAgent) {
+        toast({
+          title: "Error",
+          description: "No agent selected for editing",
+          variant: "destructive",
+        });
+        return;
+      }
       updateMutation.mutate(data);
     } else {
       createMutation.mutate(data);
     }
-    setIsDialogOpen(false);
-    setSelectedAgent(null);
-    setFormInitialValues(undefined);
+    // Don't close dialog or clear state here - let mutation callbacks handle it
   };
 
   const syncMutation = useMutation({
