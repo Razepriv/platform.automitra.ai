@@ -133,8 +133,8 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
     defaultValues: {
       name: "",
       description: "",
-      model: models[0]?.name || "gpt-4",
-      provider: providers[0] || "openai",
+      provider: bolnaModels[0]?.provider || "openai",
+      model: bolnaModels[0]?.model || "gpt-4o-mini",
       voiceId: "",
       voiceProvider: "elevenlabs",
       language: "en-US",
