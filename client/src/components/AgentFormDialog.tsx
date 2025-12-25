@@ -897,11 +897,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  {filteredVoices.map((v) => (
-                                    <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || ""}>
-                                      {v.voice_name || v.name}
-                                    </SelectItem>
-                                  ))}
+                                  {filteredVoices
+                                    .filter(v => v.voice_id || v.id) // Filter out items without IDs
+                                    .map((v) => (
+                                      <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id!}>
+                                        {v.voice_name || v.name}
+                                      </SelectItem>
+                                    ))}
                                 </SelectContent>
                               </Select>
                               <FormMessage />
