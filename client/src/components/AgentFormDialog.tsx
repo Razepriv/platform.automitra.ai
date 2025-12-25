@@ -381,14 +381,14 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Phone Number</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <Select onValueChange={(val) => field.onChange(val === "__none__" ? undefined : val)} value={field.value || "__none__"}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select phone number" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">No phone number</SelectItem>
+                            <SelectItem value="__none__">No phone number</SelectItem>
                             {phoneNumbers.map((n) => (
                               <SelectItem key={n.id} value={n.id}>{n.number}</SelectItem>
                             ))}
