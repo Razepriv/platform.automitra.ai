@@ -562,11 +562,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  {models.map((m) => (
-                                    <SelectItem key={m.id || m.name} value={m.name || ""}>
-                                      {m.name}
-                                    </SelectItem>
-                                  ))}
+                                  {models
+                                    .filter(m => m.name) // Filter out items without names
+                                    .map((m) => (
+                                      <SelectItem key={m.id || m.name} value={m.name!}>
+                                        {m.name}
+                                      </SelectItem>
+                                    ))}
                                 </SelectContent>
                               </Select>
                               <FormMessage />
