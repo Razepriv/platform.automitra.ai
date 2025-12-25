@@ -40,7 +40,6 @@ export const agentFormSchema = z.object({
   voiceId: z.string().min(1, "Voice is required"),
   voiceProvider: z.string().optional(),
   assignedPhoneNumberId: z.string().optional(),
-  knowledgeBaseIds: z.array(z.string()).default([]),
   systemPrompt: z.string().optional(),
   userPrompt: z.string().optional(),
   firstMessage: z.string().optional(),
@@ -160,7 +159,6 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       hangupAfterSilenceTime: 15,
       hangupMessage: "Call will now disconnect",
       callTerminationTime: 600,
-      knowledgeBaseIds: [],
       llmKnowledgeBaseIds: [],
       callForwardingEnabled: false,
       callForwardingNumber: "",
@@ -177,7 +175,6 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
         provider: providers[0] || "openai",
         voiceId: "",
         language: "en-US",
-        knowledgeBaseIds: [],
         llmKnowledgeBaseIds: [],
         ...initialValues,
       });
@@ -199,6 +196,15 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
     });
     return Array.from(providers);
   }, [voices]);
+
+  // Filter phone numbers by selected telephony provider
+  const filteredPhoneNumbers = useMemo(() => {
+    const telephonyProvider = form.watch("telephonyProvider");
+    if (!telephonyProvider) return phoneNumbers;
+    return phoneNumbers.filter(n => 
+      !n.provider || n.provider.toLowerCase() === telephonyProvider.toLowerCase()
+    );
+  }, [phoneNumbers, form.watch("telephonyProvider")]);
 
   const handleSubmit = (values: AgentFormValues) => {
     onSubmit(values);
@@ -246,7 +252,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 pr-4" style={{ maxHeight: 'calc(90vh - 200px)' }}>
+          <div className="flex-1 overflow-y-auto pr-4" style={{ maxHeight: 'calc(90vh - 200px)' }}>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 py-4">
                 {/* Agent Tab */}
@@ -398,9 +404,15 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           </FormControl>
                           <SelectContent className="max-h-[300px]">
                             <SelectItem value="__none__">No phone number</SelectItem>
-                            {phoneNumbers.map((n) => (
-                              <SelectItem key={n.id} value={n.id}>{n.number}</SelectItem>
-                            ))}
+                            {filteredPhoneNumbers.length === 0 ? (
+                              <SelectItem value="__empty" disabled>No numbers available for selected provider</SelectItem>
+                            ) : (
+                              filteredPhoneNumbers.map((n) => (
+                                <SelectItem key={n.id} value={n.id}>
+                                  {n.number} {n.provider ? `(${n.provider})` : ''}
+                                </SelectItem>
+                              ))
+                            )}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -408,59 +420,6 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="knowledgeBaseIds"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Knowledge Base</FormLabel>
-                        <Select 
-                          onValueChange={(value) => {
-                            const current = field.value || [];
-                            if (!current.includes(value)) {
-                              field.onChange([...current, value]);
-                            }
-                          }}
-                          value=""
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select knowledge base (multi-select)" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent className="max-h-[300px]">
-                            {knowledgeBaseItems
-                              .filter(kb => !field.value?.includes(kb.id))
-                              .map((kb) => (
-                                <SelectItem key={kb.id} value={kb.id}>{kb.title}</SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                        {field.value && field.value.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {field.value.map((id) => {
-                              const kb = knowledgeBaseItems.find(k => k.id === id);
-                              return kb ? (
-                                <Badge key={id} variant="secondary" className="flex items-center gap-1">
-                                  {kb.title}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      field.onChange(field.value?.filter(v => v !== id));
-                                    }}
-                                    className="ml-1 hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
-                                </Badge>
-                              ) : null;
-                            })}
-                          </div>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
 
                   <FormField
                     control={form.control}
@@ -1679,7 +1638,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                 </DialogFooter>
               </form>
             </Form>
-          </ScrollArea>
+          </div>
         </Tabs>
       </DialogContent>
     </Dialog>
