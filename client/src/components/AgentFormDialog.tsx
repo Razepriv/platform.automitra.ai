@@ -90,7 +90,10 @@ export const agentFormSchema = z.object({
   enableSummarization: z.boolean().default(false),
   enableExtraction: z.boolean().default(false),
   extractionPrompt: z.string().optional(),
-  webhookUrl: z.string().optional(),
+  
+  // Call Forwarding (Tools)
+  callForwardingEnabled: z.boolean().default(false),
+  callForwardingNumber: z.string().optional(),
 }).passthrough();
 
 export type AgentFormValues = z.infer<typeof agentFormSchema>;
@@ -127,6 +130,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
   bolnaVoices = [],
 }) => {
   const [activeTab, setActiveTab] = useState("agent");
+  const [selectedFunction, setSelectedFunction] = useState<string>("");
 
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentFormSchema),
@@ -158,6 +162,8 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       callTerminationTime: 600,
       knowledgeBaseIds: [],
       llmKnowledgeBaseIds: [],
+      callForwardingEnabled: false,
+      callForwardingNumber: "",
       ...initialValues,
     },
   });
@@ -240,7 +246,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 pr-4" style={{ maxHeight: 'calc(90vh - 200px)' }}>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6 py-4">
                 {/* Agent Tab */}
@@ -286,7 +292,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select provider" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[300px]">
                               {providers.map((p) => (
                                 <SelectItem key={p} value={p}>{p}</SelectItem>
                               ))}
@@ -309,7 +315,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select model" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[300px]">
                               {models
                                 .filter(m => !field.value || m.provider === form.watch("provider") || !m.provider)
                                 .filter(m => m.name) // Filter out items without names
@@ -339,7 +345,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select provider" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[300px]">
                               {availableVoiceProviders.map((p) => (
                                 <SelectItem key={p} value={p}>{p}</SelectItem>
                               ))}
@@ -362,7 +368,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select voice" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[300px]">
                               {filteredVoices
                                 .filter(v => v.voice_id || v.id) // Filter out items without IDs
                                 .map((v) => (
@@ -390,7 +396,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               <SelectValue placeholder="Select phone number" />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
+                          <SelectContent className="max-h-[300px]">
                             <SelectItem value="__none__">No phone number</SelectItem>
                             {phoneNumbers.map((n) => (
                               <SelectItem key={n.id} value={n.id}>{n.number}</SelectItem>
@@ -422,7 +428,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               <SelectValue placeholder="Select knowledge base (multi-select)" />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
+                          <SelectContent className="max-h-[300px]">
                             {knowledgeBaseItems
                               .filter(kb => !field.value?.includes(kb.id))
                               .map((kb) => (
@@ -538,7 +544,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     <SelectValue placeholder="Select provider" />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[300px]">
                                   {providers.map((p) => (
                                     <SelectItem key={p} value={p}>{p}</SelectItem>
                                   ))}
@@ -561,7 +567,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     <SelectValue placeholder="Select model" />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[300px]">
                                   {models
                                     .filter(m => m.name) // Filter out items without names
                                     .map((m) => (
@@ -669,7 +675,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   <SelectValue placeholder="Select knowledge bases" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[300px]">
                                 {knowledgeBaseItems
                                   .filter(kb => !field.value?.includes(kb.id))
                                   .map((kb) => (
@@ -741,7 +747,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   <SelectValue placeholder="Select language" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[300px]">
                                 <SelectItem value="en-US">English (US)</SelectItem>
                                 <SelectItem value="hi-IN">Hindi</SelectItem>
                                 <SelectItem value="es-ES">Spanish</SelectItem>
@@ -773,7 +779,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[300px]">
                                   <SelectItem value="deepgram">Deepgram</SelectItem>
                                   <SelectItem value="google">Google</SelectItem>
                                   <SelectItem value="aws">AWS</SelectItem>
@@ -796,7 +802,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[300px]">
                                   <SelectItem value="nova-2">nova-2</SelectItem>
                                   <SelectItem value="nova">nova</SelectItem>
                                   <SelectItem value="enhanced">enhanced</SelectItem>
@@ -851,7 +857,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[300px]">
                                   {availableVoiceProviders.map((p) => (
                                     <SelectItem key={p} value={p}>{p}</SelectItem>
                                   ))}
@@ -874,7 +880,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[300px]">
                                   <SelectItem value="eleven_turbo_v2_5">eleven_turbo_v2_5</SelectItem>
                                   <SelectItem value="eleven_multilingual_v2">eleven_multilingual_v2</SelectItem>
                                 </SelectContent>
@@ -1131,7 +1137,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   <SelectValue />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[300px]">
                                 <SelectItem value="rapid">Rapid</SelectItem>
                                 <SelectItem value="balanced">Balanced</SelectItem>
                                 <SelectItem value="deliberate">Deliberate</SelectItem>
@@ -1235,7 +1241,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   <SelectValue />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[300px]">
                                 <SelectItem value="exotel">Exotel</SelectItem>
                                 <SelectItem value="twilio">Twilio</SelectItem>
                                 <SelectItem value="plivo">Plivo</SelectItem>
@@ -1502,22 +1508,74 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-2">
-                        <Label>Choose functions</Label>
-                        <div className="flex gap-2">
-                          <Select>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select functions" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="transferCall">Transfer Call</SelectItem>
-                              <SelectItem value="custom">Custom Function</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button type="button" variant="default">
-                            Add function
-                          </Button>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Choose functions</Label>
+                          <div className="flex gap-2">
+                            <Select value={selectedFunction} onValueChange={setSelectedFunction}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select functions" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[300px]">
+                                <SelectItem value="transferCall">Transfer Call</SelectItem>
+                                <SelectItem value="custom">Custom Function</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button 
+                              type="button" 
+                              variant="default"
+                              onClick={() => {
+                                if (selectedFunction === "transferCall") {
+                                  form.setValue("callForwardingEnabled", true);
+                                  setSelectedFunction("");
+                                }
+                              }}
+                              disabled={!selectedFunction}
+                            >
+                              Add function
+                            </Button>
+                          </div>
                         </div>
+                        
+                        {form.watch("callForwardingEnabled") && (
+                          <FormField
+                            control={form.control}
+                            name="callForwardingNumber"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Call Forwarding Number *</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    {...field} 
+                                    placeholder="Enter phone number to forward calls to (e.g., +1234567890)" 
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  When the agent needs to transfer the call to a human, calls will be forwarded to this number.
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                        
+                        {form.watch("callForwardingEnabled") && (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="flex items-center gap-1">
+                              Transfer Call
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  form.setValue("callForwardingEnabled", false);
+                                  form.setValue("callForwardingNumber", "");
+                                }}
+                                className="ml-1 hover:text-destructive"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -1609,37 +1667,6 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     </CardContent>
                   </Card>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center justify-between">
-                        <span>Push all execution data to webhook</span>
-                        <Button type="button" variant="link" size="sm" className="h-auto p-0">
-                          See all events <ExternalLink className="h-3 w-3 ml-1" />
-                        </Button>
-                      </CardTitle>
-                      <CardDescription>
-                        Automatically receive all execution data for this agent using webhook
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <FormField
-                        control={form.control}
-                        name="webhookUrl"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Your webhook URL</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="https://your-webhook-url.com/endpoint" />
-                            </FormControl>
-                            <FormDescription>
-                              Webhook URL will be automatically set to platform endpoint for real-time updates
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
                 </TabsContent>
 
                 <DialogFooter className="mt-6">
