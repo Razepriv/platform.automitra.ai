@@ -34,8 +34,6 @@ export const agentFormSchema = z.object({
   // Agent Tab
   name: z.string().min(1, "Agent name is required"),
   description: z.string().optional(),
-  model: z.string().min(1, "Model is required"),
-  provider: z.string().min(1, "Provider is required"),
   voiceId: z.string().min(1, "Voice is required"),
   voiceProvider: z.string().optional(),
   assignedPhoneNumberId: z.string().optional(),
@@ -44,8 +42,8 @@ export const agentFormSchema = z.object({
   firstMessage: z.string().optional(),
   
   // LLM Tab
-  llmProvider: z.string().optional(),
-  llmModel: z.string().optional(),
+  provider: z.string().min(1, "Provider is required"),
+  model: z.string().min(1, "Model is required"),
   maxTokens: z.number().min(1).max(4000).default(150),
   temperature: z.number().min(0).max(2).default(0.7),
   llmKnowledgeBaseIds: z.array(z.string()).default([]),
@@ -170,8 +168,8 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       form.reset({
         name: "",
         description: "",
-        model: models[0]?.name || "gpt-4",
-        provider: providers[0] || "openai",
+        provider: bolnaModels[0]?.provider || "openai",
+        model: bolnaModels[0]?.model || "gpt-4o-mini",
         voiceId: "",
         language: "en-US",
         llmKnowledgeBaseIds: [],
@@ -195,6 +193,24 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
     });
     return Array.from(providers);
   }, [voices]);
+
+  // Get unique LLM providers from bolnaModels
+  const availableLLMProviders = useMemo(() => {
+    const providerSet = new Set<string>();
+    bolnaModels.forEach(m => {
+      if (m.provider) providerSet.add(m.provider.toLowerCase());
+    });
+    return Array.from(providerSet).sort();
+  }, [bolnaModels]);
+
+  // Filter LLM models by selected provider
+  const filteredLLMModels = useMemo(() => {
+    const selectedProvider = form.watch("provider");
+    if (!selectedProvider) return bolnaModels;
+    return bolnaModels.filter(m => 
+      m.provider?.toLowerCase() === selectedProvider.toLowerCase()
+    );
+  }, [bolnaModels, form.watch("provider")]);
 
   // Filter phone numbers by selected telephony provider
   const filteredPhoneNumbers = useMemo(() => {
@@ -284,58 +300,6 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     )}
                   />
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="provider"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Provider *</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select provider" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent className="max-h-[300px]">
-                              {providers.map((p) => (
-                                <SelectItem key={p} value={p}>{p}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="model"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Model *</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select model" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent className="max-h-[300px]">
-                              {models
-                                .filter(m => !field.value || m.provider === form.watch("provider") || !m.provider)
-                                .filter(m => m.name) // Filter out items without names
-                                .map((m) => (
-                                  <SelectItem key={m.id || m.name} value={m.name!}>
-                                    {m.name}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
@@ -492,18 +456,18 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       <div className="grid grid-cols-2 gap-4">
                         <FormField
                           control={form.control}
-                          name="llmProvider"
+                          name="provider"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Provider</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || form.watch("provider")}>
+                              <FormLabel>Provider *</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
                                 <FormControl>
                                   <SelectTrigger>
                                     <SelectValue placeholder="Select provider" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent className="max-h-[300px]">
-                                  {providers.map((p) => (
+                                  {availableLLMProviders.map((p) => (
                                     <SelectItem key={p} value={p}>{p}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -515,22 +479,22 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 
                         <FormField
                           control={form.control}
-                          name="llmModel"
+                          name="model"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Model</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || form.watch("model")}>
+                              <FormLabel>Model *</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
                                 <FormControl>
                                   <SelectTrigger>
                                     <SelectValue placeholder="Select model" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent className="max-h-[300px]">
-                                  {models
-                                    .filter(m => m.name) // Filter out items without names
+                                  {filteredLLMModels
+                                    .filter(m => m.model) // Filter out items without model names
                                     .map((m) => (
-                                      <SelectItem key={m.id || m.name} value={m.name!}>
-                                        {m.name}
+                                      <SelectItem key={m.model} value={m.model}>
+                                        {m.model} {m.description ? `- ${m.description}` : ''}
                                       </SelectItem>
                                     ))}
                                 </SelectContent>
