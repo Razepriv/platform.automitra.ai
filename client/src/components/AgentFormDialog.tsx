@@ -312,8 +312,9 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             <SelectContent>
                               {models
                                 .filter(m => !field.value || m.provider === form.watch("provider") || !m.provider)
+                                .filter(m => m.name) // Filter out items without names
                                 .map((m) => (
-                                  <SelectItem key={m.id || m.name} value={m.name || ""}>
+                                  <SelectItem key={m.id || m.name} value={m.name!}>
                                     {m.name}
                                   </SelectItem>
                                 ))}
@@ -362,11 +363,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {filteredVoices.map((v) => (
-                                <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || ""}>
-                                  {v.voice_name || v.name}
-                                </SelectItem>
-                              ))}
+                              {filteredVoices
+                                .filter(v => v.voice_id || v.id) // Filter out items without IDs
+                                .map((v) => (
+                                  <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id!}>
+                                    {v.voice_name || v.name}
+                                  </SelectItem>
+                                ))}
                             </SelectContent>
                           </Select>
                           <FormMessage />
