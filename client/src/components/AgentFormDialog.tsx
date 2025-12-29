@@ -83,12 +83,22 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 
       if (initialValues) {
         // For edit mode: merge defaults with initial values, preserving all fields
-        form.reset({
+        // This ensures edit mode has the exact same structure as create mode
+        const editValues = {
           ...defaults,
           ...initialValues,
           // Ensure arrays are properly set
-          knowledgeBaseIds: initialValues.knowledgeBaseIds || [],
-        });
+          knowledgeBaseIds: Array.isArray(initialValues.knowledgeBaseIds) 
+            ? initialValues.knowledgeBaseIds 
+            : (initialValues.knowledgeBaseIds ? [initialValues.knowledgeBaseIds] : []),
+          // Ensure all fields from defaults are present
+          temperature: initialValues.temperature ?? defaults.temperature,
+          maxDuration: initialValues.maxDuration ?? defaults.maxDuration,
+          maxTokens: initialValues.maxTokens ?? defaults.maxTokens,
+          callForwardingEnabled: initialValues.callForwardingEnabled ?? defaults.callForwardingEnabled,
+          status: initialValues.status ?? defaults.status,
+        };
+        form.reset(editValues);
       } else {
         // For create mode: use defaults
         form.reset(defaults);
