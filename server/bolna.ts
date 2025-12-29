@@ -585,14 +585,13 @@ export class BolnaClient {
   ): Promise<BolnaAgent> {
     this.ensureConfigured();
     
-    // Get existing agent to preserve voiceId if not in updates
-    let existingAgent: AiAgent | null = null;
+    // Get existing agent config from Bolna to preserve voice settings if not updating
+    let existingAgentConfig: any = null;
     try {
       const existing = await this.getAgent(agentId);
-      // We need to get the full agent data from storage, but for now use what we have
-      // The updates should include voiceId when syncing
+      existingAgentConfig = existing;
     } catch (e) {
-      // Agent might not exist, continue
+      console.warn(`[Bolna] Could not fetch existing agent config: ${(e as Error).message}`);
     }
     
     // Build partial v2 config for updates
@@ -617,11 +616,38 @@ export class BolnaClient {
       config.agent_config!.agent_type = updates.agentType;
     }
 
-    // Get voiceId from updates or use existing - CRITICAL for ElevenLabs
-    const voiceId = updates.voiceId || (updates as any).voiceId;
-    const voiceProvider = (updates.voiceProvider && updates.voiceProvider !== 'all') 
+    // Get voiceId from updates - if not provided, try to extract from existing config
+    let voiceId = updates.voiceId || (updates as any).voiceId;
+    let voiceProvider = (updates.voiceProvider && updates.voiceProvider !== 'all') 
       ? updates.voiceProvider 
-      : (updates as any).voiceProvider || "elevenlabs";
+      : (updates as any).voiceProvider;
+    
+    // If voiceId not in updates, try to get from existing agent config
+    if (!voiceId && existingAgentConfig) {
+      try {
+        // Try to extract voiceId from existing Bolna config
+        const tasks = existingAgentConfig.agent_config?.tasks || [];
+        if (tasks.length > 0) {
+          const synthesizer = tasks[0]?.tools_config?.synthesizer;
+          if (synthesizer?.provider_config?.voice_id) {
+            voiceId = synthesizer.provider_config.voice_id;
+            voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
+            console.log(`[Bolna] Preserved voiceId ${voiceId} from existing agent config`);
+          } else if (synthesizer?.provider_config?.voice) {
+            voiceId = synthesizer.provider_config.voice;
+            voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
+            console.log(`[Bolna] Preserved voiceId ${voiceId} from existing agent config`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[Bolna] Could not extract voiceId from existing config: ${(e as Error).message}`);
+      }
+    }
+    
+    // Default voiceProvider if still not set
+    if (!voiceProvider || voiceProvider === 'all') {
+      voiceProvider = "elevenlabs";
+    }
 
     // Update tasks if any LLM or voice config changes OR call forwarding changes
     // ALWAYS include synthesizer if voiceId is available (required for ElevenLabs)
