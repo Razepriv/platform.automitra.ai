@@ -21,8 +21,12 @@ type BolnaVoice = {
 };
 
 type BolnaModel = {
-  id?: string;
+  model?: string;
   name?: string;
+  id?: string;
+  provider?: string;
+  family?: string;
+  description?: string;
 };
 
 // Form schema with numeric coercion - extends shared schema for alignment
@@ -175,9 +179,10 @@ export default function AIAgents() {
     return Array.from(providers).sort();
   }, [bolnaVoices]);
 
-  const { data: bolnaModels = [], isLoading: loadingModels } = useQuery<BolnaModel[]>({
+  const { data: bolnaModels = [], isLoading: loadingModels, refetch: refetchModels } = useQuery<BolnaModel[]>({
     queryKey: ['/api/bolna/models'],
-    enabled: isDialogOpen,
+    enabled: true, // Always enabled to fetch models
+    staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
   });
 
   // Fetch Exotel phone numbers

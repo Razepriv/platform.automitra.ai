@@ -926,38 +926,114 @@ export class BolnaClient {
   }
 
   async getAvailableModels(): Promise<BolnaModel[]> {
-    // Bolna doesn't have a models endpoint, so we return a curated list
-    // of commonly used models that work with Bolna's API
-    return [
-      // OpenAI Models
-      { model: "gpt-4o", provider: "openai", family: "openai", description: "Most advanced GPT-4 model" },
-      { model: "gpt-4o-mini", provider: "openai", family: "openai", description: "Faster, more affordable GPT-4" },
-      { model: "gpt-4-turbo", provider: "openai", family: "openai", description: "GPT-4 Turbo with Vision" },
-      { model: "gpt-4", provider: "openai", family: "openai", description: "GPT-4 base model" },
-      { model: "gpt-3.5-turbo", provider: "openai", family: "openai", description: "Fast and efficient" },
+    this.ensureConfigured();
+    
+    try {
+      // Try to fetch models from Bolna API
+      // Try multiple possible endpoints
+      const endpoints = [
+        "/me/models",
+        "/models",
+        "/user/models",
+        "/v2/models",
+        "/v1/models",
+      ];
       
-      // Anthropic Models
-      { model: "claude-3-5-sonnet-20241022", provider: "anthropic", family: "anthropic", description: "Most capable Claude model" },
-      { model: "claude-3-opus-20240229", provider: "anthropic", family: "anthropic", description: "Claude Opus" },
-      { model: "claude-3-sonnet-20240229", provider: "anthropic", family: "anthropic", description: "Claude Sonnet" },
-      { model: "claude-3-haiku-20240307", provider: "anthropic", family: "anthropic", description: "Fast Claude model" },
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`[Bolna] Trying models endpoint: ${endpoint}`);
+          const response = await this.request<any>(endpoint);
+          
+          // Handle different response formats
+          if (Array.isArray(response)) {
+            console.log(`[Bolna] ✓ Found ${response.length} models from ${endpoint}`);
+            return response.map((m: any) => ({
+              model: m.model || m.name || m.id,
+              provider: m.provider || m.family,
+              family: m.family || m.provider,
+              description: m.description || `${m.provider || 'Unknown'} model`,
+            }));
+          }
+          
+          if (response && typeof response === 'object') {
+            // Check for 'data' field
+            if ('data' in response && Array.isArray((response as any).data)) {
+              console.log(`[Bolna] ✓ Found ${(response as any).data.length} models from ${endpoint}`);
+              return (response as any).data.map((m: any) => ({
+                model: m.model || m.name || m.id,
+                provider: m.provider || m.family,
+                family: m.family || m.provider,
+                description: m.description || `${m.provider || 'Unknown'} model`,
+              }));
+            }
+            
+            // Check for 'models' field
+            if ('models' in response && Array.isArray((response as any).models)) {
+              console.log(`[Bolna] ✓ Found ${(response as any).models.length} models from ${endpoint}`);
+              return (response as any).models.map((m: any) => ({
+                model: m.model || m.name || m.id,
+                provider: m.provider || m.family,
+                family: m.family || m.provider,
+                description: m.description || `${m.provider || 'Unknown'} model`,
+              }));
+            }
+          }
+        } catch (error: any) {
+          console.log(`[Bolna] ✗ Failed with ${endpoint}: ${error.message}`);
+          continue; // Try next endpoint
+        }
+      }
       
-      // Google Models
-      { model: "gemini-1.5-pro", provider: "google", family: "google", description: "Advanced Gemini Pro" },
-      { model: "gemini-1.5-flash", provider: "google", family: "google", description: "Fast Gemini model" },
-      { model: "gemini-pro", provider: "google", family: "google", description: "Gemini Pro" },
-      
-      // Meta Models  
-      { model: "llama-3.1-70b-instruct", provider: "meta", family: "meta", description: "Llama 3.1 70B" },
-      { model: "llama-3.1-8b-instruct", provider: "meta", family: "meta", description: "Llama 3.1 8B" },
-      { model: "llama-3-70b-instruct", provider: "meta", family: "meta", description: "Llama 3 70B" },
-      { model: "llama-3-8b-instruct", provider: "meta", family: "meta", description: "Llama 3 8B" },
-      
-      // Mistral Models
-      { model: "mistral-large-latest", provider: "mistral", family: "mistral", description: "Mistral Large" },
-      { model: "mistral-medium-latest", provider: "mistral", family: "mistral", description: "Mistral Medium" },
-      { model: "mistral-small-latest", provider: "mistral", family: "mistral", description: "Mistral Small" },
-    ];
+      // If all endpoints fail, return curated list as fallback
+      console.warn("[Bolna] Could not fetch models from API, using fallback list");
+      return [
+        // OpenAI Models
+        { model: "gpt-4o", provider: "openai", family: "openai", description: "Most advanced GPT-4 model" },
+        { model: "gpt-4o-mini", provider: "openai", family: "openai", description: "Faster, more affordable GPT-4" },
+        { model: "gpt-4-turbo", provider: "openai", family: "openai", description: "GPT-4 Turbo with Vision" },
+        { model: "gpt-4", provider: "openai", family: "openai", description: "GPT-4 base model" },
+        { model: "gpt-3.5-turbo", provider: "openai", family: "openai", description: "Fast and efficient" },
+        
+        // Anthropic Models
+        { model: "claude-3-5-sonnet-20241022", provider: "anthropic", family: "anthropic", description: "Most capable Claude model" },
+        { model: "claude-3-opus-20240229", provider: "anthropic", family: "anthropic", description: "Claude Opus" },
+        { model: "claude-3-sonnet-20240229", provider: "anthropic", family: "anthropic", description: "Claude Sonnet" },
+        { model: "claude-3-haiku-20240307", provider: "anthropic", family: "anthropic", description: "Fast Claude model" },
+        
+        // Google Models
+        { model: "gemini-1.5-pro", provider: "google", family: "google", description: "Advanced Gemini Pro" },
+        { model: "gemini-1.5-flash", provider: "google", family: "google", description: "Fast Gemini model" },
+        { model: "gemini-pro", provider: "google", family: "google", description: "Gemini Pro" },
+        
+        // Meta Models  
+        { model: "llama-3.1-70b-instruct", provider: "meta", family: "meta", description: "Llama 3.1 70B" },
+        { model: "llama-3.1-8b-instruct", provider: "meta", family: "meta", description: "Llama 3.1 8B" },
+        { model: "llama-3-70b-instruct", provider: "meta", family: "meta", description: "Llama 3 70B" },
+        { model: "llama-3-8b-instruct", provider: "meta", family: "meta", description: "Llama 3 8B" },
+        
+        // Mistral Models
+        { model: "mistral-large-latest", provider: "mistral", family: "mistral", description: "Mistral Large" },
+        { model: "mistral-medium-latest", provider: "mistral", family: "mistral", description: "Mistral Medium" },
+        { model: "mistral-small-latest", provider: "mistral", family: "mistral", description: "Mistral Small" },
+      ];
+    } catch (error) {
+      console.error("Error fetching Bolna models:", error);
+      // Return fallback list on error
+      return [
+        { model: "gpt-4o", provider: "openai", family: "openai", description: "Most advanced GPT-4 model" },
+        { model: "gpt-4o-mini", provider: "openai", family: "openai", description: "Faster, more affordable GPT-4" },
+        { model: "gpt-4-turbo", provider: "openai", family: "openai", description: "GPT-4 Turbo with Vision" },
+        { model: "gpt-4", provider: "openai", family: "openai", description: "GPT-4 base model" },
+        { model: "gpt-3.5-turbo", provider: "openai", family: "openai", description: "Fast and efficient" },
+        { model: "claude-3-5-sonnet-20241022", provider: "anthropic", family: "anthropic", description: "Most capable Claude model" },
+        { model: "claude-3-opus-20240229", provider: "anthropic", family: "anthropic", description: "Claude Opus" },
+        { model: "claude-3-sonnet-20240229", provider: "anthropic", family: "anthropic", description: "Claude Sonnet" },
+        { model: "claude-3-haiku-20240307", provider: "anthropic", family: "anthropic", description: "Fast Claude model" },
+        { model: "gemini-1.5-pro", provider: "google", family: "google", description: "Advanced Gemini Pro" },
+        { model: "gemini-1.5-flash", provider: "google", family: "google", description: "Fast Gemini model" },
+        { model: "gemini-pro", provider: "google", family: "google", description: "Gemini Pro" },
+      ];
+    }
   }
 
   // Knowledge Base Management
