@@ -211,11 +211,13 @@ async function ensureAppUser(user: SupabaseUser) {
     return existing;
   }
 
-  const domain = email;
-  const orgName = email.split("@")[0] || "Workspace";
+  // Create unique organization per user for absolute isolation
+  // Use user ID as domain to ensure uniqueness
+  const domain = `user-${user.id}`;
+  const orgName = email.split("@")[0] || "User";
   const organization = await storage.upsertOrganization({
-    name: `${orgName.charAt(0).toUpperCase()}${orgName.slice(1)} Workspace`,
-    domain,
+    name: `${orgName.charAt(0).toUpperCase()}${orgName.slice(1)}'s Workspace`,
+    domain, // Unique per user
   });
 
   existing = await storage.upsertUser({
@@ -228,15 +230,6 @@ async function ensureAppUser(user: SupabaseUser) {
     role: "admin",
   });
 
-  // Create welcome notification for new users
-  try {
-    const { createWelcomeNotification } = await import('./utils/notifications');
-    await createWelcomeNotification(existing.id, organization.id);
-  } catch (error) {
-    console.error("Error creating welcome notification:", error);
-    // Don't fail user creation if notification fails
-  }
-
   return existing;
 }
 
@@ -244,14 +237,20 @@ async function ensureBasicLoginUser(options: {
   email: string;
   fullName?: string;
   role?: string;
+  userId?: string;
 }): Promise<User> {
-  const { email, fullName, role } = options;
+  const { email, fullName, role, userId } = options;
   const lowerEmail = email.toLowerCase();
-  const domain = lowerEmail.split("@")[1] || "demo.local";
-  const orgNamePart = domain.split(".")[0] || "demo";
+  
+  // Create unique organization per user for absolute isolation
+  // Use userId or email hash as domain to ensure uniqueness
+  const safeId = userId || `basic-${lowerEmail.replace(/[^a-z0-9.-]/gi, "-")}`;
+  const domain = `user-${safeId}`;
+  const orgName = lowerEmail.split("@")[0] || "User";
+  
   const organization = await storage.upsertOrganization({
-    name: `${orgNamePart.charAt(0).toUpperCase()}${orgNamePart.slice(1)} Test Workspace`,
-    domain,
+    name: `${orgName.charAt(0).toUpperCase()}${orgName.slice(1)}'s Workspace`,
+    domain, // Unique per user
   });
 
   const [firstName, ...rest] = (fullName || lowerEmail.split("@")[0] || "Demo").split(" ").filter(Boolean);
@@ -261,9 +260,7 @@ async function ensureBasicLoginUser(options: {
       ? (role as UserRole)
       : BASIC_AUTH_DEFAULT_ROLE;
 
-  const safeId = `basic-${lowerEmail.replace(/[^a-z0-9.-]/gi, "-")}`;
-
-  const newUser = await storage.upsertUser({
+  return storage.upsertUser({
     id: safeId,
     organizationId: organization.id,
     email: lowerEmail,
@@ -271,17 +268,6 @@ async function ensureBasicLoginUser(options: {
     lastName,
     role: resolvedRole,
   });
-
-  // Create welcome notification for new users
-  try {
-    const { createWelcomeNotification } = await import('./utils/notifications');
-    await createWelcomeNotification(newUser.id, organization.id);
-  } catch (error) {
-    console.error("Error creating welcome notification:", error);
-    // Don't fail user creation if notification fails
-  }
-
-  return newUser;
 }
 
 function buildSessionUser(user: SupabaseUser, session: SupabaseSession): AuthenticatedUser {

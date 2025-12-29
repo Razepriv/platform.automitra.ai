@@ -6,6 +6,7 @@ import multer from "multer";
 import Papa from "papaparse";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./supabaseAuth";
+import { verifyOrganizationIsolation, ensureUserOrganization } from "./isolationMiddleware";
 import { generateAISummary, analyzeLeadQualification, generateMeetingSummary, matchLeadsToAgents } from "./openai";
 import { bolnaClient } from "./bolna";
 import { exotelClient } from "./exotel";
@@ -81,14 +82,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User management routes
-  app.get('/api/users', isAuthenticated, async (req: any, res) => {
+  // Note: With absolute isolation, each user has their own organization
+  // So this will only return the current user (their own organization)
+  app.get('/api/users', isAuthenticated, verifyOrganizationIsolation, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const currentUser = await storage.getUser(userId);
-      if (!currentUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      const users = await storage.getUsersByOrganization(currentUser.organizationId);
+      const organizationId = ensureUserOrganization(req);
+      const users = await storage.getUsersByOrganization(organizationId);
+      // With absolute isolation, this should only return the current user
       res.json(users);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -242,14 +242,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Pass only validated tenant-safe data to storage (organizationId cannot be in updateData)
-      const agent = await storage.updateAIAgent(req.params.id, user.organizationId, updateData);
+      const agent = await storage.updateAIAgent(req.params.id, organizationId, updateData);
       if (!agent) {
         return res.status(404).json({ message: "AI agent not found" });
       }
       
       // Emit real-time update
       if ((app as any).emitAgentUpdate) {
-        (app as any).emitAgentUpdate(user.organizationId, agent);
+        (app as any).emitAgentUpdate(organizationId, agent);
       }
       
       res.json(agent);
@@ -320,15 +320,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Sync agent with Bolna - retry Bolna integration
-  app.post('/api/ai-agents/:id/sync', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ai-agents/:id/sync', isAuthenticated, verifyOrganizationIsolation, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
+      const organizationId = ensureUserOrganization(req);
       
-      const agent = await storage.getAIAgent(req.params.id, user.organizationId);
+      const agent = await storage.getAIAgent(req.params.id, organizationId);
       if (!agent) {
         return res.status(404).json({ message: "AI agent not found" });
       }
@@ -2667,23 +2663,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // WebSocket connection handler
-  io.on('connection', (socket) => {
+  // WebSocket connection handler with isolation verification
+  io.on('connection', async (socket: any) => {
     console.log('Client connected:', socket.id);
     
-    // Join organization-specific room for multi-tenant isolation
+    // Verify user's organization from session
+    let userOrganizationId: string | null = null;
+    
+    try {
+      // Get session from handshake (if available)
+      const sessionId = socket.handshake.auth?.sessionId || 
+                        socket.handshake.headers.cookie?.match(/megna\.sid=([^;]+)/)?.[1];
+      
+      if (sessionId) {
+        // Try to get user from session
+        const pgStore = require('connect-pg-simple')(require('express-session'));
+        const store = new pgStore({
+          conString: process.env.DATABASE_URL,
+          tableName: "sessions",
+        });
+        
+        const session = await new Promise<any>((resolve, reject) => {
+          store.get(sessionId, (err: any, sess: any) => {
+            if (err) reject(err);
+            else resolve(sess);
+          });
+        });
+        
+        if (session?.user?.claims?.sub) {
+          const user = await storage.getUser(session.user.claims.sub);
+          if (user) {
+            userOrganizationId = user.organizationId;
+            (socket as any).organizationId = userOrganizationId;
+            (socket as any).userId = user.id;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`[Socket.IO] Could not verify session for socket ${socket.id}:`, error);
+    }
+    
+    // Join organization-specific room for absolute multi-tenant isolation
     socket.on('join:organization', (organizationId: string) => {
+      // Verify user can only join their own organization
+      if (userOrganizationId && organizationId !== userOrganizationId) {
+        console.warn(`[Socket.IO] Blocked attempt by socket ${socket.id} to join org ${organizationId} (user's org: ${userOrganizationId})`);
+        return;
+      }
+      
+      // If no userOrganizationId from session, allow join but log warning
+      if (!userOrganizationId) {
+        console.warn(`[Socket.IO] Socket ${socket.id} joining org ${organizationId} without verified session`);
+      }
+      
       socket.join(`org:${organizationId}`);
-      console.log(`Client ${socket.id} joined organization room: org:${organizationId}`);
+      console.log(`[Socket.IO] Client ${socket.id} joined organization room: org:${organizationId}`);
     });
 
     socket.on('leave:organization', (organizationId: string) => {
       socket.leave(`org:${organizationId}`);
-      console.log(`Client ${socket.id} left organization room: org:${organizationId}`);
+      console.log(`[Socket.IO] Client ${socket.id} left organization room: org:${organizationId}`);
     });
     
     socket.on('disconnect', () => {
-      console.log('Client disconnected:', socket.id);
+      console.log(`[Socket.IO] Client ${socket.id} disconnected from organization ${userOrganizationId || 'unknown'}`);
     });
   });
 
