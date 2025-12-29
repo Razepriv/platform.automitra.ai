@@ -74,6 +74,11 @@ const agentFormSchema = createAiAgentSchema.extend({
   ingestSourceUrl: z.string().optional(),
   ingestSourceAuthToken: z.string().optional(),
   ingestSourceName: z.string().optional(),
+  // Input/Output
+  inputProvider: z.string().default("plivo"),
+  outputProvider: z.string().default("plivo"),
+  // Inbound limit
+  inboundLimit: z.coerce.number().default(-1),
 }).partial({
   description: true,
   voiceId: true,
