@@ -1275,9 +1275,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let kbs;
       if (agentId) {
-        kbs = await storage.getKnowledgeBasesByAgent(agentId, user.organizationId);
+        kbs = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
       } else {
-        kbs = await storage.getKnowledgeBasesByOrganization(user.organizationId);
+        kbs = await storage.getKnowledgeBase(user.organizationId);
       }
 
       res.json(kbs);
