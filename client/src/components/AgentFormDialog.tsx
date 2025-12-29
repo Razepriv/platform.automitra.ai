@@ -54,35 +54,40 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 
   useEffect(() => {
     if (open) {
+      // Use the same default values structure for both create and edit
+      const defaults = {
+        name: "",
+        description: "",
+        model: models[0]?.model || models[0]?.name || "gpt-4",
+        language: "en-US",
+        provider: "openai",
+        voiceProvider: "elevenlabs",
+        voiceId: "",
+        voiceName: "",
+        temperature: 0.7,
+        maxDuration: 600,
+        maxTokens: 150,
+        systemPrompt: "",
+        userPrompt: "",
+        firstMessage: "",
+        knowledgeBaseIds: [],
+        assignedPhoneNumberId: "",
+        callForwardingEnabled: false,
+        callForwardingNumber: "",
+        status: "active",
+      };
+
       if (initialValues) {
-        // Reset form with initial values for edit mode
+        // For edit mode: merge defaults with initial values, preserving all fields
         form.reset({
-          name: "",
-          description: "",
-          model: models[0]?.model || models[0]?.name || "gpt-4",
-          language: "en-US",
-          provider: "openai",
-          voiceProvider: "elevenlabs",
-          temperature: 0.7,
-          maxDuration: 600,
-          maxTokens: 150,
-          callForwardingEnabled: false,
+          ...defaults,
           ...initialValues,
+          // Ensure arrays are properly set
+          knowledgeBaseIds: initialValues.knowledgeBaseIds || [],
         });
       } else {
-        // Reset to defaults for create mode
-        form.reset({
-          name: "",
-          description: "",
-          model: models[0]?.model || models[0]?.name || "gpt-4",
-          language: "en-US",
-          provider: "openai",
-          voiceProvider: "elevenlabs",
-          temperature: 0.7,
-          maxDuration: 600,
-          maxTokens: 150,
-          callForwardingEnabled: false,
-        });
+        // For create mode: use defaults
+        form.reset(defaults);
       }
     }
     // eslint-disable-next-line
