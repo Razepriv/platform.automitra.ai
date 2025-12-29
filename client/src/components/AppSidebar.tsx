@@ -138,27 +138,9 @@ export function AppSidebar() {
                   size="lg"
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
-                  {organization?.logoUrl ? (
-                    <img 
-                      src={organization.logoUrl} 
-                      alt={organization.companyName || "Company logo"} 
-                      className="aspect-square size-8 object-contain rounded-lg"
-                      onError={(e) => {
-                        // Hide image and show icon fallback
-                        const target = e.currentTarget;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent) {
-                          const iconDiv = parent.querySelector('.logo-fallback-icon') as HTMLElement;
-                          if (iconDiv) iconDiv.style.display = 'flex';
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground logo-fallback-icon">
-                      <Command className="size-4" />
-                    </div>
-                  )}
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <Command className="size-4" />
+                  </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-semibold">
                       {organization?.companyName || "auto mitra ai"}
@@ -178,26 +160,9 @@ export function AppSidebar() {
                   Organizations
                 </DropdownMenuLabel>
                 <DropdownMenuItem className="gap-2 p-2">
-                  {organization?.logoUrl ? (
-                    <img 
-                      src={organization.logoUrl} 
-                      alt={organization.companyName || "Company logo"} 
-                      className="size-6 object-contain rounded-sm"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent) {
-                          const iconDiv = parent.querySelector('.dropdown-logo-fallback-icon') as HTMLElement;
-                          if (iconDiv) iconDiv.style.display = 'flex';
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="flex size-6 items-center justify-center rounded-sm border dropdown-logo-fallback-icon">
-                      <Command className="size-4" />
-                    </div>
-                  )}
+                  <div className="flex size-6 items-center justify-center rounded-sm border">
+                    <Command className="size-4" />
+                  </div>
                   {organization?.companyName || "auto mitra ai"}
                   <DropdownMenuItem className="ml-auto h-4 w-4" />
                 </DropdownMenuItem>

@@ -15,11 +15,7 @@ function buildBolnaUserData({ callId, leadId, contactName, organizationId, extra
   const userData = { ...extra };
   if (callId) userData.callId = callId;
   if (leadId) userData.leadId = leadId;
-  // Send contact name as "contact" variable for Bolna
-  if (contactName) {
-    userData.contact = contactName;
-    userData.contactName = contactName; // Keep both for backward compatibility
-  }
+  if (contactName) userData.contactName = contactName;
   if (organizationId) userData.organizationId = organizationId;
   return userData;
 }

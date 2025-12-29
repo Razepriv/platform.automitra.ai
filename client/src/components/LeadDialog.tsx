@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { CharacterCounter } from "@/components/CharacterCounter";
 import {
   Dialog,
   DialogContent,
@@ -175,17 +174,10 @@ export function LeadDialog({ open, onOpenChange, lead }: LeadDialogProps) {
                     <Textarea 
                       placeholder="Add any additional notes here..." 
                       className="resize-none" 
-                      maxLength={1000}
                       {...field} 
                       value={field.value || ''}
                     />
                   </FormControl>
-                  <CharacterCounter 
-                    current={(field.value || '').length} 
-                    max={1000}
-                    label="Notes"
-                    className="mt-1"
-                  />
                   <FormMessage />
                 </FormItem>
               )}

@@ -19,8 +19,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useWebSocketEvent } from "@/lib/useWebSocket";
-import { useCallback } from "react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -52,19 +50,6 @@ export default function Pipelines() {
   const { data: leads = [], isLoading } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
   });
-
-  // Real-time updates via WebSocket
-  useWebSocketEvent('lead:created', useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
-  }, []));
-
-  useWebSocketEvent('lead:updated', useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
-  }, []));
-
-  useWebSocketEvent('lead:deleted', useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
-  }, []));
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ leadId, status }: { leadId: string; status: string }) => {

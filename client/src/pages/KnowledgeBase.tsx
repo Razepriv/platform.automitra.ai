@@ -42,20 +42,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, FileText, Trash2, Edit, BookOpen, X, Upload, Zap } from "lucide-react";
-import { EmptyState } from "@/components/EmptyState";
-import { SkeletonTable } from "@/components/SkeletonTable";
-import { CharacterCounter } from "@/components/CharacterCounter";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Plus, Search, FileText, Trash2, Edit, BookOpen, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useWebSocketEvent } from "@/lib/useWebSocket";
-import { useCallback } from "react";
 import type { KnowledgeBase as KnowledgeBaseType, AiAgent } from "@shared/schema";
 import { createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
 
@@ -130,19 +119,6 @@ export default function KnowledgeBase() {
     queryKey: ["/api/ai-agents"],
   });
 
-  // Real-time updates via WebSocket
-  useWebSocketEvent('knowledge:created', useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
-  }, []));
-
-  useWebSocketEvent('knowledge:updated', useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
-  }, []));
-
-  useWebSocketEvent('knowledge:deleted', useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
-  }, []));
-
   const createMutation = useMutation({
     mutationFn: async (data: KnowledgeFormValues) => {
       // Deduplicate tags before sending
@@ -216,27 +192,6 @@ export default function KnowledgeBase() {
       toast({
         title: "Error",
         description: "Failed to delete knowledge base item. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const syncToBolnaMutation = useMutation({
-    mutationFn: async (agentId: string) => {
-      return await apiRequest("POST", `/api/knowledge-base/${agentId}/sync-to-bolna`);
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/knowledge-base"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-agents"] });
-      toast({
-        title: "Knowledge Base Synced",
-        description: data.message || "All knowledge base items have been unified into PDF and synced to Bolna.",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Sync Failed",
-        description: error?.message || "Failed to sync knowledge base to Bolna. Please try again.",
         variant: "destructive",
       });
     },
@@ -321,36 +276,10 @@ export default function KnowledgeBase() {
           <h1 className="text-3xl font-bold" data-testid="text-page-title">Knowledge Base</h1>
           <p className="text-muted-foreground mt-2">Manage AI training data and documentation</p>
         </div>
-        <div className="flex gap-2">
-          {agents.filter(a => a.bolnaAgentId && knowledgeBase.some(kb => kb.agentId === a.id)).length > 0 && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      const agentWithKB = agents.find(a => a.bolnaAgentId && knowledgeBase.some(kb => kb.agentId === a.id));
-                      if (agentWithKB) {
-                        syncToBolnaMutation.mutate(agentWithKB.id);
-                      }
-                    }}
-                    disabled={syncToBolnaMutation.isPending}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    {syncToBolnaMutation.isPending ? "Syncing..." : "Sync to Bolna"}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Unify all knowledge base items into a single PDF and sync to Bolna for the agent</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          <Button onClick={handleOpenCreateDialog} data-testid="button-create">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Knowledge
-          </Button>
-        </div>
+        <Button onClick={handleOpenCreateDialog} data-testid="button-create">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Knowledge
+        </Button>
       </div>
 
       <Card>
@@ -385,45 +314,26 @@ export default function KnowledgeBase() {
       </Card>
 
       {isLoading ? (
-        <div className="p-6" data-testid="loading-knowledge">
-          <SkeletonTable rows={5} columns={4} />
-        </div>
-      ) : filteredItems.length === 0 && knowledgeBase.length === 0 ? (
-        <div className="p-6" data-testid="empty-knowledge">
-          <EmptyState
-            icon={BookOpen}
-            title="No Knowledge Base Items Yet"
-            description="Start building your AI knowledge base by adding training data and documentation"
-            action={
-              <Button onClick={handleOpenCreateDialog}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Your First Knowledge Item
-              </Button>
-            }
-          />
+        <div className="flex items-center justify-center py-12" data-testid="loading-knowledge">
+          <div className="text-muted-foreground">Loading knowledge base...</div>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="p-6" data-testid="empty-filtered-knowledge">
-          <EmptyState
-            icon={Search}
-            title="No items found"
-            description={`No knowledge base items match your search "${searchQuery}"${categoryFilter !== "all" ? ` and category "${categoryFilter}"` : ""}`}
-            action={
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setSearchQuery("");
-                  setCategoryFilter("all");
-                }}
-              >
-                Clear Filters
-              </Button>
-            }
-          />
+        <div className="flex flex-col items-center justify-center py-12" data-testid="empty-knowledge">
+          <BookOpen className="w-12 h-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">No knowledge base items</h3>
+          <p className="text-muted-foreground text-center max-w-md mb-4">
+            {searchQuery || categoryFilter !== "all"
+              ? "Try adjusting your filters to see more results."
+              : "Start building your AI knowledge base by adding training data and documentation."}
+          </p>
+          {!searchQuery && categoryFilter === "all" && (
+            <Button onClick={handleOpenCreateDialog}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Your First Knowledge
+            </Button>
+          )}
         </div>
-      ) : null}
-      
-      {!isLoading && filteredItems.length > 0 && (
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredItems.map((item) => (
             <Card key={item.id} className="hover-elevate" data-testid={`card-knowledge-${item.id}`}>
@@ -469,24 +379,6 @@ export default function KnowledgeBase() {
                       <Edit className="w-3 h-3 mr-1" />
                       Edit
                     </Button>
-                    {item.agentId && agents.find(a => a.id === item.agentId)?.bolnaAgentId && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => syncToBolnaMutation.mutate(item.agentId!)}
-                            disabled={syncToBolnaMutation.isPending}
-                          >
-                            <Zap className="w-3 h-3 mr-1" />
-                            Sync
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Sync all knowledge base items for this agent to Bolna as unified PDF</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -543,17 +435,10 @@ export default function KnowledgeBase() {
                       <Textarea
                         placeholder="Enter content or training data"
                         rows={6}
-                        maxLength={10000}
                         {...field}
                         data-testid="input-content"
                       />
                     </FormControl>
-                    <CharacterCounter 
-                      current={field.value?.length || 0} 
-                      max={10000}
-                      label="Content"
-                      className="mt-1"
-                    />
                     <FormMessage />
                   </FormItem>
                 )}
@@ -728,18 +613,11 @@ export default function KnowledgeBase() {
                     <FormControl>
                       <Textarea
                         rows={6}
-                        maxLength={10000}
                         value={field.value ?? ""}
                         onChange={field.onChange}
                         data-testid="input-edit-content"
                       />
                     </FormControl>
-                    <CharacterCounter 
-                      current={(field.value ?? "").length} 
-                      max={10000}
-                      label="Content"
-                      className="mt-1"
-                    />
                     <FormMessage />
                   </FormItem>
                 )}

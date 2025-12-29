@@ -323,6 +323,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/ai-agents/:id/sync', isAuthenticated, verifyOrganizationIsolation, async (req: any, res) => {
     try {
       const organizationId = ensureUserOrganization(req);
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
       
       const agent = await storage.getAIAgent(req.params.id, organizationId);
       if (!agent) {
@@ -412,7 +417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Determine telephony provider from assigned phone number
         let telephonyProvider = "plivo"; // Default to plivo
         if (agent.assignedPhoneNumberId) {
-          const phoneNumber = await storage.getPhoneNumber(agent.assignedPhoneNumberId, user.organizationId);
+          const phoneNumber = await storage.getPhoneNumber(agent.assignedPhoneNumberId, organizationId);
           if (phoneNumber?.provider) {
             telephonyProvider = phoneNumber.provider;
             console.log(`[Bolna] Using telephony provider: ${telephonyProvider} from phone ${phoneNumber.phoneNumber}`);
@@ -434,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Creating new Bolna agent...`);
           bolnaAgent = await bolnaClient.createAgent({ ...agent, telephonyProvider } as any);
           console.log(`Bolna agent created with ID: ${bolnaAgent.agent_id}`);
-          await storage.updateAIAgent(req.params.id, user.organizationId, {
+          await storage.updateAIAgent(req.params.id, organizationId, {
             bolnaAgentId: bolnaAgent.agent_id,
             bolnaConfig: bolnaAgent as any,
           });
@@ -443,7 +448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (agent.assignedPhoneNumberId) {
             try {
               console.log(`Setting up inbound call for agent ${agent.id} with phone number ${agent.assignedPhoneNumberId}...`);
-              const phoneNumber = await storage.getPhoneNumber(agent.assignedPhoneNumberId, user.organizationId);
+              const phoneNumber = await storage.getPhoneNumber(agent.assignedPhoneNumberId, organizationId);
               if (phoneNumber && phoneNumber.phoneNumber) {
                 // Pass the actual phone number to Bolna with provider
                 await bolnaClient.setupInboundCall(bolnaAgent.agent_id, phoneNumber.phoneNumber, phoneNumber.provider || "exotel");
@@ -456,11 +461,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        const updatedAgent = await storage.getAIAgent(req.params.id, user.organizationId);
+        const updatedAgent = await storage.getAIAgent(req.params.id, organizationId);
         
         // Emit real-time update
         if ((app as any).emitAgentUpdate && updatedAgent) {
-          (app as any).emitAgentUpdate(user.organizationId, updatedAgent);
+          (app as any).emitAgentUpdate(organizationId, updatedAgent);
         }
         
         res.json(updatedAgent);
