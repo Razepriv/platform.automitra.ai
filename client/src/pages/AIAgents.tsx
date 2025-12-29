@@ -224,7 +224,7 @@ export default function AIAgents() {
       setVoiceProviderFilter('all');
       // Don't set voiceProvider to 'all' - keep the default 'elevenlabs'
     }
-  }, [isDialogOpen, dialogMode, form]);
+  }, [isDialogOpen, dialogMode]);
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
@@ -330,7 +330,7 @@ export default function AIAgents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
       setIsDialogOpen(false);
-      form.reset();
+      setFormInitialValues(undefined);
       toast({
         title: "Success",
         description: "AI Agent created successfully",
@@ -452,7 +452,7 @@ export default function AIAgents() {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
       setIsEditDialogOpen(false);
       setSelectedAgent(null);
-      form.reset();
+      setFormInitialValues(undefined);
       toast({
         title: "Success",
         description: "AI Agent updated successfully",
