@@ -1,9 +1,8 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
-import type { Organization } from "@shared/schema";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -11,7 +10,6 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
 import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Wallet } from "@/components/Wallet";
-import { Notifications } from "@/components/Notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -44,9 +42,7 @@ function UnauthenticatedRouter() {
       <Route path="/">
         <Auth mode="login" />
       </Route>
-      <Route>
-        <Auth mode="login" />
-      </Route>
+      <Route component={Auth} />
     </Switch>
   );
 }
@@ -73,50 +69,9 @@ function AuthenticatedRouter() {
 
 function AuthenticatedLayout() {
   const { user } = useAuth();
-  const { data: organization } = useQuery<Organization>({
+  const { data: organization } = useQuery({
     queryKey: ["/api/organization"],
   });
-
-  // Apply primary color dynamically
-  useEffect(() => {
-    if (organization?.primaryColor) {
-      // Convert hex color to HSL for CSS variables
-      const hex = organization.primaryColor.replace('#', '');
-      const r = parseInt(hex.substr(0, 2), 16) / 255;
-      const g = parseInt(hex.substr(2, 2), 16) / 255;
-      const b = parseInt(hex.substr(4, 2), 16) / 255;
-
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      let h = 0, s = 0, l = (max + min) / 2;
-
-      if (max !== min) {
-        const d = max - min;
-        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-        switch (max) {
-          case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-          case g: h = ((b - r) / d + 2) / 6; break;
-          case b: h = ((r - g) / d + 4) / 6; break;
-        }
-      }
-
-      h = Math.round(h * 360);
-      s = Math.round(s * 100);
-      l = Math.round(l * 100);
-
-      // Update CSS variables
-      document.documentElement.style.setProperty('--primary', `${h} ${s}% ${l}%`);
-      document.documentElement.style.setProperty('--btn-primary-bg', `${h} ${s}% ${l}%`);
-      document.documentElement.style.setProperty('--sidebar-primary', `${h} ${s}% ${l}%`);
-      document.documentElement.style.setProperty('--ring', `${h} ${s}% ${l}%`);
-    } else {
-      // Reset to defaults
-      document.documentElement.style.removeProperty('--primary');
-      document.documentElement.style.removeProperty('--btn-primary-bg');
-      document.documentElement.style.removeProperty('--sidebar-primary');
-      document.documentElement.style.removeProperty('--ring');
-    }
-  }, [organization?.primaryColor]);
 
   return (
     <WebSocketProvider>
@@ -131,7 +86,7 @@ function AuthenticatedLayout() {
                 <BreadcrumbList>
                   <BreadcrumbItem className="hidden md:block">
                     <BreadcrumbLink href="#">
-                      {organization?.companyName || "Platform"}
+                      Platform
                     </BreadcrumbLink>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
@@ -142,7 +97,6 @@ function AuthenticatedLayout() {
               </Breadcrumb>
             </div>
             <div className="ml-auto flex items-center gap-4 px-4">
-              <Notifications />
               <ThemeToggle />
               <Wallet />
             </div>

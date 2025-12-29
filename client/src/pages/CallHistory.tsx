@@ -60,6 +60,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
+import { useAuth } from "@/hooks/useAuth";
 import type { Call, AiAgent, PhoneNumber } from "@shared/schema";
 
 function formatDuration(seconds: number | null): string {
@@ -128,7 +129,7 @@ export default function CallHistory() {
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
   const { toast } = useToast();
-  const { user } = require("@/hooks/useAuth").useAuth();
+  const { user } = useAuth();
 
   // Auto-open dialog from Quick Actions
   useEffect(() => {
