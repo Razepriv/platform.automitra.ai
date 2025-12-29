@@ -4,7 +4,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // AgentFormValues is now provided by the parent (AIAgents.tsx) via props, so we use 'any' for generic typing here
 type AgentFormValues = any;
@@ -51,26 +53,49 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
   });
 
   useEffect(() => {
-    if (open && initialValues) {
-      form.reset({
-        name: "",
-        description: "",
-        model: "gpt-4",
-        language: "en-US",
-        ...initialValues,
-      });
+    if (open) {
+      if (initialValues) {
+        // Reset form with initial values for edit mode
+        form.reset({
+          name: "",
+          description: "",
+          model: models[0]?.model || models[0]?.name || "gpt-4",
+          language: "en-US",
+          provider: "openai",
+          voiceProvider: "elevenlabs",
+          temperature: 0.7,
+          maxDuration: 600,
+          maxTokens: 150,
+          callForwardingEnabled: false,
+          ...initialValues,
+        });
+      } else {
+        // Reset to defaults for create mode
+        form.reset({
+          name: "",
+          description: "",
+          model: models[0]?.model || models[0]?.name || "gpt-4",
+          language: "en-US",
+          provider: "openai",
+          voiceProvider: "elevenlabs",
+          temperature: 0.7,
+          maxDuration: 600,
+          maxTokens: 150,
+          callForwardingEnabled: false,
+        });
+      }
     }
     // eslint-disable-next-line
-  }, [open, initialValues]);
+  }, [open, initialValues, models]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{mode === "edit" ? "Edit Agent" : "Create Agent"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {/* Agent Name */}
             <FormField
               control={form.control}
@@ -94,6 +119,29 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {/* Language */}
+            <FormField
+              control={form.control}
+              name="language"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Language</FormLabel>
+                  <FormControl>
+                    <select {...field} className="input">
+                      <option value="en-US">English (US)</option>
+                      <option value="en-GB">English (UK)</option>
+                      <option value="es-ES">Spanish</option>
+                      <option value="fr-FR">French</option>
+                      <option value="de-DE">German</option>
+                      <option value="hi-IN">Hindi</option>
+                      <option value="ja-JP">Japanese</option>
+                      <option value="zh-CN">Chinese</option>
+                    </select>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -125,12 +173,31 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
               name="provider"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Provider</FormLabel>
+                  <FormLabel>LLM Provider</FormLabel>
                   <FormControl>
                     <select {...field} className="input">
                       {providers.map((p) => (
                         <option key={p} value={p}>{p}</option>
                       ))}
+                    </select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {/* Voice Provider Dropdown */}
+            <FormField
+              control={form.control}
+              name="voiceProvider"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Voice Provider</FormLabel>
+                  <FormControl>
+                    <select {...field} className="input">
+                      <option value="elevenlabs">ElevenLabs</option>
+                      <option value="polly">Polly</option>
+                      <option value="google">Google</option>
+                      <option value="azure">Azure</option>
                     </select>
                   </FormControl>
                   <FormMessage />
@@ -195,47 +262,135 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                 </FormItem>
               )}
             />
-            {/* Prompts and Advanced Config (systemPrompt, userPrompt, firstMessage, etc.) */}
-            <FormField
-              control={form.control}
-              name="systemPrompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>System Prompt</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+            {/* Advanced LLM Settings */}
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="text-sm font-semibold">Advanced LLM Settings</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="temperature"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Temperature (0-2)</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.1" min="0" max="2" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="maxTokens"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Tokens</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="1" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="maxDuration"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Duration (seconds)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="1" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Prompts */}
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="text-sm font-semibold">Prompts</h3>
+              <FormField
+                control={form.control}
+                name="systemPrompt"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>System Prompt</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} rows={6} className="font-mono text-sm" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="userPrompt"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>User Prompt</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="firstMessage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>First Message</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} rows={3} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* Call Forwarding */}
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="text-sm font-semibold">Call Forwarding</h3>
+              <FormField
+                control={form.control}
+                name="callForwardingEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">Enable Call Forwarding</FormLabel>
+                      <div className="text-sm text-muted-foreground">
+                        Transfer calls to a human agent when needed
+                      </div>
+                    </div>
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              {form.watch("callForwardingEnabled") && (
+                <FormField
+                  control={form.control}
+                  name="callForwardingNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Forwarding Number</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="+1234567890" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               )}
-            />
-            <FormField
-              control={form.control}
-              name="userPrompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>User Prompt</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="firstMessage"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>First Message</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {/* Add more advanced config fields as needed, following the same pattern */}
+            </div>
             <DialogFooter>
               <Button type="submit" disabled={loading}>
                 {mode === "edit" ? "Save Changes" : "Create Agent"}
