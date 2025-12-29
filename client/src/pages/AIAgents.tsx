@@ -457,7 +457,7 @@ export default function AIAgents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-      setIsEditDialogOpen(false);
+      setIsDialogOpen(false);
       setSelectedAgent(null);
       setFormInitialValues(undefined);
       toast({
