@@ -46,7 +46,6 @@ interface BolnaAgentConfigV2 {
           top_k: number;
           temperature: number;
           request_json: boolean;
-          rag_ids?: string[]; // Knowledgebase RAG IDs for RAG functionality
         };
         synthesizer?: {
           provider: string;
@@ -131,31 +130,9 @@ interface BolnaModel {
 
 interface BolnaKnowledgeBase {
   rag_id: string;
-  file_name?: string;
   name?: string;
   created_at?: string;
-  updated_at?: string;
-  humanized_created_at?: string;
-  vector_id?: string;
-  status?: 'processing' | 'processed' | 'error';
-  chunk_size?: number;
-  similarity_top_k?: number;
-  overlapping?: number;
-  source_type?: 'pdf' | 'url';
-}
-
-interface BolnaBatch {
-  batch_id: string;
-  humanized_created_at?: string;
-  created_at?: string;
-  updated_at?: string;
-  status: 'scheduled' | 'created' | 'queued' | 'executed';
-  scheduled_at?: string;
-  from_phone_number?: string;
-  file_name?: string;
-  valid_contacts?: number;
-  total_contacts?: number;
-  execution_status?: Record<string, number>;
+  status?: string;
 }
 
 interface BolnaAgentConfig {
@@ -313,6 +290,68 @@ export class BolnaClient {
       });
     } catch (error) {
       console.error(`Failed to register phone number ${phoneNumber}:`, error);
+      throw error;
+    }
+  }
+
+  async searchAvailablePhoneNumbers(params?: {
+    country?: string;
+    pattern?: string;
+    type?: string;
+  }): Promise<any> {
+    this.ensureConfigured();
+    
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.country) queryParams.append('country', params.country);
+      if (params?.pattern) queryParams.append('pattern', params.pattern);
+      if (params?.type) queryParams.append('type', params.type);
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/phone-numbers/search${queryString ? `?${queryString}` : ''}`;
+      
+      return await this.request<any>(endpoint);
+    } catch (error) {
+      console.error('Failed to search available phone numbers from Bolna:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * List all phone numbers registered in Bolna account
+   * Returns numbers with telephony provider (twilio, plivo, vonage, etc.)
+   */
+  async listRegisteredPhoneNumbers(): Promise<Array<{
+    id: string;
+    phone_number: string;
+    agent_id: string | null;
+    telephony_provider: string;
+    price: string;
+    rented: boolean;
+    created_at: string;
+    updated_at: string;
+    renewal_at: string;
+    humanized_created_at: string;
+    humanized_updated_at: string;
+  }>> {
+    this.ensureConfigured();
+    
+    try {
+      return await this.request<Array<{
+        id: string;
+        phone_number: string;
+        agent_id: string | null;
+        telephony_provider: string;
+        price: string;
+        rented: boolean;
+        created_at: string;
+        updated_at: string;
+        renewal_at: string;
+        humanized_created_at: string;
+        humanized_updated_at: string;
+      }>>("/phone-numbers/all");
+    } catch (error) {
+      console.error('Failed to list registered phone numbers from Bolna:', error);
       throw error;
     }
   }
@@ -669,10 +708,6 @@ export class BolnaClient {
               request_json: true,
               summarization_details: null,
               extraction_details: null,
-              // Include knowledgebase RAG IDs if available
-              ...(updates.knowledgeBaseIds && updates.knowledgeBaseIds.length > 0 && {
-                rag_ids: updates.knowledgeBaseIds
-              }),
             },
           },
           synthesizer: synthesizerConfig,
@@ -1039,127 +1074,6 @@ export class BolnaClient {
       method: "POST",
       body: JSON.stringify(callData),
     });
-  }
-
-  // Voice Cloning Management
-  async cloneVoice(audioFile: File | Buffer | any, options?: {
-    voice_name?: string;
-    description?: string;
-    fileName?: string;
-  }): Promise<{ voice_id: string; voice_name: string; status: string }> {
-    this.ensureConfigured();
-    
-    const FormData = (await import('form-data')).default;
-    const formData = new FormData();
-    
-    if (options?.voice_name) formData.append('voice_name', options.voice_name);
-    if (options?.description) formData.append('description', options.description);
-    
-    if (Buffer.isBuffer(audioFile)) {
-      formData.append('audio_file', audioFile, options?.fileName || 'voice_sample.mp3');
-    } else if (audioFile && typeof audioFile === 'object' && 'buffer' in audioFile) {
-      formData.append('audio_file', audioFile.buffer, audioFile.originalname || options?.fileName || 'voice_sample.mp3');
-    } else {
-      throw new Error('Invalid audio file type. Expected Buffer or multer file object.');
-    }
-
-    const url = `${this.baseUrl}/voices/clone`;
-    const headers: Record<string, string> = {
-      "Authorization": `Bearer ${this.apiKey}`,
-      ...formData.getHeaders(),
-    };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: formData as any,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Bolna API error (${response.status}): ${errorText}`);
-    }
-
-    return await response.json();
-  }
-
-  async getClonedVoices(): Promise<BolnaVoice[]> {
-    this.ensureConfigured();
-    try {
-      const response = await this.request<BolnaVoice[] | { data?: BolnaVoice[]; voices?: BolnaVoice[] }>("/voices/cloned");
-      if (Array.isArray(response)) {
-        return response;
-      }
-      if (response && typeof response === 'object') {
-        if ('data' in response && Array.isArray((response as any).data)) {
-          return (response as any).data;
-        }
-        if ('voices' in response && Array.isArray((response as any).voices)) {
-          return (response as any).voices;
-        }
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching cloned voices:", error);
-      return [];
-    }
-  }
-
-  async deleteClonedVoice(voiceId: string): Promise<void> {
-    this.ensureConfigured();
-    await this.request<void>(`/voices/${voiceId}`, {
-      method: "DELETE",
-    });
-  }
-
-  // Batch Calling for Campaigns
-  async createBatch(data: {
-    agent_id: string;
-    file: File | Buffer | any;
-    from_phone_number?: string;
-    scheduled_at?: string;
-    fileName?: string;
-  }): Promise<BolnaBatch> {
-    this.ensureConfigured();
-    
-    const FormData = (await import('form-data')).default;
-    const formData = new FormData();
-    
-    formData.append('agent_id', data.agent_id);
-    if (data.from_phone_number) formData.append('from_phone_number', data.from_phone_number);
-    if (data.scheduled_at) formData.append('scheduled_at', data.scheduled_at);
-    
-    if (Buffer.isBuffer(data.file)) {
-      formData.append('file', data.file, data.fileName || 'batch.csv');
-    } else if (data.file && typeof data.file === 'object' && 'buffer' in data.file) {
-      formData.append('file', data.file.buffer, data.file.originalname || data.fileName || 'batch.csv');
-    } else {
-      throw new Error('Invalid file type. Expected Buffer or multer file object.');
-    }
-
-    const url = `${this.baseUrl}/batches`;
-    const headers: Record<string, string> = {
-      "Authorization": `Bearer ${this.apiKey}`,
-      ...formData.getHeaders(),
-    };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: formData as any,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Bolna API error (${response.status}): ${errorText}`);
-    }
-
-    return await response.json();
-  }
-
-  async getBatch(batchId: string): Promise<BolnaBatch> {
-    this.ensureConfigured();
-    return await this.request<BolnaBatch>(`/batches/${batchId}`);
   }
 }
 

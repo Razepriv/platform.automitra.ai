@@ -1,21 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AgentFormDialog, AgentFormValues, agentFormSchema } from "@/components/AgentFormDialog";
+import { AgentFormDialog, AgentFormValues } from "@/components/AgentFormDialog";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bot, Phone, Plus, Settings, Zap, Loader2, BookOpen, Mic, RefreshCw, Trash2, AlertTriangle, Search, Filter } from "lucide-react";
-import { EmptyState } from "@/components/EmptyState";
-import { SkeletonCard } from "@/components/SkeletonTable";
-import { Pagination } from "@/components/Pagination";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Bot, Phone, Plus, Settings, Zap, Loader2, BookOpen, Mic, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
@@ -36,15 +25,78 @@ type BolnaModel = {
   name?: string;
 };
 
+// Form schema with numeric coercion - extends shared schema for alignment
+// z.coerce handles HTML number input strings → numbers automatically
+const agentFormSchema = createAiAgentSchema.extend({
+  temperature: z.coerce.number().min(0).max(2).default(0.7),
+  maxDuration: z.coerce.number().int().positive().default(600),
+  maxTokens: z.coerce.number().int().positive().default(150),
+
+  // Advanced Bolna Config Fields
+  webhookUrl: z.string().optional(),
+  agentType: z.string().default("other"),
+  
+  // Transcriber
+  transcriberProvider: z.string().default("deepgram"),
+  transcriberModel: z.string().default("nova-2"),
+  transcriberLanguage: z.string().default("en"),
+  transcriberStream: z.boolean().default(true),
+  transcriberSamplingRate: z.coerce.number().default(16000),
+  transcriberEncoding: z.string().default("linear16"),
+  transcriberEndpointing: z.coerce.number().default(100),
+  
+  // Synthesizer (extra)
+  synthesizerStream: z.boolean().default(true),
+  synthesizerBufferSize: z.coerce.number().default(150),
+  synthesizerAudioFormat: z.string().default("wav"),
+  
+  // Task Config
+  hangupAfterSilence: z.coerce.number().default(10),
+  incrementalDelay: z.coerce.number().default(400),
+  numberOfWordsForInterruption: z.coerce.number().default(2),
+  hangupAfterLLMCall: z.boolean().default(false),
+  callCancellationPrompt: z.string().optional(),
+  backchanneling: z.boolean().default(false),
+  backchannelingMessageGap: z.coerce.number().default(5),
+  backchannelingStartDelay: z.coerce.number().default(5),
+  ambientNoise: z.boolean().default(false),
+  ambientNoiseTrack: z.string().default("office-ambience"),
+  callTerminate: z.coerce.number().default(90),
+  voicemail: z.boolean().default(false),
+  disallowUnknownNumbers: z.boolean().default(false),
+  
+  // Ingest Source Config
+  ingestSourceType: z.string().default("api"),
+  ingestSourceUrl: z.string().optional(),
+  ingestSourceAuthToken: z.string().optional(),
+  ingestSourceName: z.string().optional(),
+}).partial({
+  description: true,
+  voiceId: true,
+  voiceName: true,
+  systemPrompt: true,
+  userPrompt: true,
+  firstMessage: true,
+  provider: true,
+  voiceProvider: true,
+  status: true,
+  createdBy: true,
+  bolnaAgentId: true,
+  bolnaConfig: true,
+  avgRating: true,
+  knowledgeBaseIds: true,
+  assignedPhoneNumberId: true,
+  callForwardingEnabled: true,
+  callForwardingNumber: true,
+});
+
+type AgentFormValues = z.infer<typeof agentFormSchema>;
+
 export default function AIAgents() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create"|"edit">("create");
   const [formInitialValues, setFormInitialValues] = useState<Partial<AgentFormValues> | undefined>(undefined);
   const [selectedAgent, setSelectedAgent] = useState<AiAgent | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
   const { toast } = useToast();
 
   // Auto-open dialog from Quick Actions
@@ -84,43 +136,16 @@ export default function AIAgents() {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
   }, []));
 
-  // Filter agents based on search and status
-  const filteredAgents = useMemo(() => {
-    if (!agents) return [];
-    let filtered = agents;
+  // Real-time phone number updates
+  useWebSocketEvent('phone:created', useCallback(() => {
+    console.log('[AIAgents] Received phone:created event');
+    queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
+  }, []));
 
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(agent =>
-        agent.name?.toLowerCase().includes(query) ||
-        agent.description?.toLowerCase().includes(query) ||
-        agent.voiceName?.toLowerCase().includes(query) ||
-        agent.model?.toLowerCase().includes(query)
-      );
-    }
-
-    // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter(agent => agent.status === statusFilter);
-    }
-
-    return filtered;
-  }, [agents, searchQuery, statusFilter]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredAgents.length / itemsPerPage);
-  const paginatedAgents = filteredAgents.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-  const showingFrom = filteredAgents.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
-  const showingTo = Math.min(currentPage * itemsPerPage, filteredAgents.length);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, statusFilter]);
+  useWebSocketEvent('phone:updated', useCallback(() => {
+    console.log('[AIAgents] Received phone:updated event');
+    queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
+  }, []));
 
   // State for voice provider filter
   const [voiceProviderFilter, setVoiceProviderFilter] = useState<string>('all');
@@ -199,31 +224,113 @@ export default function AIAgents() {
       setVoiceProviderFilter('all');
       // Don't set voiceProvider to 'all' - keep the default 'elevenlabs'
     }
-  }, [isDialogOpen, dialogMode]);
+  }, [isDialogOpen, dialogMode, form]);
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
-      // Send all form data to backend - backend will construct Bolna config
+      // Build payload - only include defined fields from schema
       const payload: any = {
-        ...data,
-        // Ensure required fields have defaults
-        model: data.model || data.llmModel || "gpt-4",
-        provider: data.provider || data.llmProvider || "openai",
-        voiceProvider: data.voiceProvider || data.audioVoiceProvider || "elevenlabs",
-        voiceId: data.voiceId || data.audioVoiceId,
-        language: data.language || "en-US",
+        name: data.name,
+        model: data.model,
+        language: data.language,
         temperature: data.temperature ?? 0.7,
-        maxTokens: data.maxTokens ?? 150,
         maxDuration: data.maxDuration ?? 600,
+        maxTokens: data.maxTokens ?? 150,
+        provider: data.provider ?? "openai",
+        voiceProvider: data.voiceProvider ?? "elevenlabs",
+        status: data.status ?? "active",
+        callForwardingEnabled: data.callForwardingEnabled ?? false,
       };
+      
+      // Only add optional fields if they have values
+      if (data.description) payload.description = data.description;
+      if (data.voiceId) payload.voiceId = data.voiceId;
+      if (data.voiceName) payload.voiceName = data.voiceName;
+      if (data.systemPrompt) payload.systemPrompt = data.systemPrompt;
+      if (data.userPrompt) payload.userPrompt = data.userPrompt;
+      if (data.firstMessage) payload.firstMessage = data.firstMessage;
+      if (data.knowledgeBaseIds && data.knowledgeBaseIds.length > 0) {
+        payload.knowledgeBaseIds = data.knowledgeBaseIds;
+      }
+      if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
+      if (data.callForwardingNumber) payload.callForwardingNumber = data.callForwardingNumber;
 
+      // Construct Bolna Config
+      const bolnaConfig = {
+        agent_config: {
+          agent_name: data.name,
+          agent_welcome_message: data.firstMessage,
+          webhook_url: data.webhookUrl,
+          agent_type: data.agentType,
+          tasks: [{
+            task_type: "conversation",
+            tools_config: {
+              llm_agent: {
+                agent_type: "simple_llm_agent",
+                agent_flow_type: "streaming",
+                llm_config: {
+                  agent_flow_type: "streaming",
+                  provider: data.provider,
+                  model: data.model,
+                  max_tokens: data.maxTokens,
+                  temperature: data.temperature,
+                  request_json: true
+                }
+              },
+              synthesizer: {
+                provider: data.voiceProvider,
+                provider_config: {
+                  voice: data.voiceId,
+                  language: data.language
+                },
+                stream: data.synthesizerStream,
+                buffer_size: data.synthesizerBufferSize,
+                audio_format: data.synthesizerAudioFormat
+              },
+              transcriber: {
+                provider: data.transcriberProvider,
+                model: data.transcriberModel,
+                language: data.transcriberLanguage,
+                stream: data.transcriberStream,
+                sampling_rate: data.transcriberSamplingRate,
+                encoding: data.transcriberEncoding,
+                endpointing: data.transcriberEndpointing
+              }
+            },
+            task_config: {
+              hangup_after_silence: data.hangupAfterSilence,
+              incremental_delay: data.incrementalDelay,
+              number_of_words_for_interruption: data.numberOfWordsForInterruption,
+              hangup_after_LLMCall: data.hangupAfterLLMCall,
+              call_cancellation_prompt: data.callCancellationPrompt,
+              backchanneling: data.backchanneling,
+              backchanneling_message_gap: data.backchannelingMessageGap,
+              backchanneling_start_delay: data.backchannelingStartDelay,
+              ambient_noise: data.ambientNoise,
+              ambient_noise_track: data.ambientNoiseTrack,
+              call_terminate: data.callTerminate,
+              voicemail: data.voicemail,
+              disallow_unknown_numbers: data.disallowUnknownNumbers
+            }
+          }],
+          ingest_source_config: data.ingestSourceUrl ? {
+            source_type: data.ingestSourceType,
+            source_url: data.ingestSourceUrl,
+            source_auth_token: data.ingestSourceAuthToken,
+            source_name: data.ingestSourceName
+          } : undefined
+        }
+      };
+      
+      payload.bolnaConfig = bolnaConfig;
+      
       const res = await apiRequest('POST', '/api/ai-agents', payload);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
       setIsDialogOpen(false);
-      setFormInitialValues(undefined);
+      form.reset();
       toast({
         title: "Success",
         description: "AI Agent created successfully",
@@ -242,25 +349,110 @@ export default function AIAgents() {
     mutationFn: async (data: AgentFormValues) => {
       if (!selectedAgent) throw new Error("No agent selected");
       
-      // Send all form data to backend - backend will construct Bolna config
+      // Build payload - only include defined fields from schema
       const payload: any = {
-        ...data,
-        // Ensure required fields have defaults
-        model: data.model || data.llmModel || selectedAgent.model,
-        provider: data.provider || data.llmProvider || selectedAgent.provider,
-        voiceProvider: data.voiceProvider || data.audioVoiceProvider || selectedAgent.voiceProvider,
-        voiceId: data.voiceId || data.audioVoiceId || selectedAgent.voiceId,
-        language: data.language || selectedAgent.language,
+        name: data.name,
+        model: data.model,
+        language: data.language,
+        temperature: data.temperature ?? 0.7,
+        maxDuration: data.maxDuration ?? 600,
+        maxTokens: data.maxTokens ?? 150,
+        provider: data.provider ?? "openai",
+        voiceProvider: data.voiceProvider ?? "elevenlabs",
+        status: data.status ?? "active",
+        callForwardingEnabled: data.callForwardingEnabled ?? false,
       };
+      
+      // Only add optional fields if they have values
+      if (data.description) payload.description = data.description;
+      if (data.voiceId) payload.voiceId = data.voiceId;
+      if (data.voiceName) payload.voiceName = data.voiceName;
+      if (data.systemPrompt) payload.systemPrompt = data.systemPrompt;
+      if (data.userPrompt) payload.userPrompt = data.userPrompt;
+      if (data.firstMessage) payload.firstMessage = data.firstMessage;
+      if (data.knowledgeBaseIds && data.knowledgeBaseIds.length > 0) {
+        payload.knowledgeBaseIds = data.knowledgeBaseIds;
+      }
+      if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
+      if (data.callForwardingNumber) payload.callForwardingNumber = data.callForwardingNumber;
 
+      // Construct Bolna Config
+      const bolnaConfig = {
+        agent_config: {
+          agent_name: data.name,
+          agent_welcome_message: data.firstMessage,
+          webhook_url: data.webhookUrl,
+          agent_type: data.agentType,
+          tasks: [{
+            task_type: "conversation",
+            tools_config: {
+              llm_agent: {
+                agent_type: "simple_llm_agent",
+                agent_flow_type: "streaming",
+                llm_config: {
+                  agent_flow_type: "streaming",
+                  provider: data.provider,
+                  model: data.model,
+                  max_tokens: data.maxTokens,
+                  temperature: data.temperature,
+                  request_json: true
+                }
+              },
+              synthesizer: {
+                provider: data.voiceProvider,
+                provider_config: {
+                  voice: data.voiceId,
+                  language: data.language
+                },
+                stream: data.synthesizerStream,
+                buffer_size: data.synthesizerBufferSize,
+                audio_format: data.synthesizerAudioFormat
+              },
+              transcriber: {
+                provider: data.transcriberProvider,
+                model: data.transcriberModel,
+                language: data.transcriberLanguage,
+                stream: data.transcriberStream,
+                sampling_rate: data.transcriberSamplingRate,
+                encoding: data.transcriberEncoding,
+                endpointing: data.transcriberEndpointing
+              }
+            },
+            task_config: {
+              hangup_after_silence: data.hangupAfterSilence,
+              incremental_delay: data.incrementalDelay,
+              number_of_words_for_interruption: data.numberOfWordsForInterruption,
+              hangup_after_LLMCall: data.hangupAfterLLMCall,
+              call_cancellation_prompt: data.callCancellationPrompt,
+              backchanneling: data.backchanneling,
+              backchanneling_message_gap: data.backchannelingMessageGap,
+              backchanneling_start_delay: data.backchannelingStartDelay,
+              ambient_noise: data.ambientNoise,
+              ambient_noise_track: data.ambientNoiseTrack,
+              call_terminate: data.callTerminate,
+              voicemail: data.voicemail,
+              disallow_unknown_numbers: data.disallowUnknownNumbers
+            }
+          }],
+          ingest_source_config: data.ingestSourceUrl ? {
+            source_type: data.ingestSourceType,
+            source_url: data.ingestSourceUrl,
+            source_auth_token: data.ingestSourceAuthToken,
+            source_name: data.ingestSourceName
+          } : undefined
+        }
+      };
+      
+      payload.bolnaConfig = bolnaConfig;
+      
       const res = await apiRequest('PATCH', `/api/ai-agents/${selectedAgent.id}`, payload);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-      setIsDialogOpen(false);
+      setIsEditDialogOpen(false);
       setSelectedAgent(null);
-      setFormInitialValues(undefined);
+      form.reset();
       toast({
         title: "Success",
         description: "AI Agent updated successfully",
@@ -276,20 +468,14 @@ export default function AIAgents() {
   });
 
   const handleSubmit = (data: AgentFormValues) => {
-    if (dialogMode === "edit") {
-      if (!selectedAgent) {
-        toast({
-          title: "Error",
-          description: "No agent selected for editing",
-          variant: "destructive",
-        });
-        return;
-      }
+    if (dialogMode === "edit" && selectedAgent) {
       updateMutation.mutate(data);
     } else {
       createMutation.mutate(data);
     }
-    // Don't close dialog or clear state here - let mutation callbacks handle it
+    setIsDialogOpen(false);
+    setSelectedAgent(null);
+    setFormInitialValues(undefined);
   };
 
   const syncMutation = useMutation({
@@ -349,7 +535,20 @@ export default function AIAgents() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
-            <SkeletonCard key={i} />
+            <Card key={i} className="animate-pulse">
+              <CardHeader>
+                <div className="h-6 w-32 bg-muted rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="h-4 w-full bg-muted rounded" />
+                  <div className="h-4 w-3/4 bg-muted rounded" />
+                </div>
+              </CardContent>
+              <CardFooter>
+                <div className="h-10 w-full bg-muted rounded" />
+              </CardFooter>
+            </Card>
           ))}
         </div>
       </div>
@@ -386,66 +585,29 @@ export default function AIAgents() {
         </Button>
       </div>
 
-      {/* Search and Filter Bar */}
-      {agents.length > 0 && (
-        <div className="flex gap-2 mb-6 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search agents by name, description, voice, or model..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+      {!agents || agents.length === 0 ? (
+        <Card className="p-12 text-center" data-testid="card-empty-state">
+          <div className="flex flex-col items-center gap-4">
+            <div className="p-4 bg-muted rounded-full">
+              <Bot className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold mb-1" data-testid="heading-empty-title">
+                No AI Agents Yet
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4" data-testid="text-empty-description">
+                Create your first AI voice agent to start handling calls
+              </p>
+              <Button onClick={() => handleOpenCreate()} data-testid="button-create-first-agent">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Your First Agent
+              </Button>
+            </div>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-              <SelectItem value="testing">Testing</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {agents.length === 0 ? (
-        <EmptyState
-          icon={Bot}
-          title="No AI Agents Yet"
-          description="Create your first AI voice agent to start handling calls and automating conversations"
-          action={
-            <Button onClick={() => handleOpenCreate()} data-testid="button-create-first-agent">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Your First Agent
-            </Button>
-          }
-        />
-      ) : filteredAgents.length === 0 ? (
-        <EmptyState
-          icon={Search}
-          title="No agents found"
-          description={`No agents match your search "${searchQuery}"${statusFilter !== "all" ? ` and status "${statusFilter}"` : ""}`}
-          action={
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setSearchQuery("");
-                setStatusFilter("all");
-              }}
-            >
-              Clear Filters
-            </Button>
-          }
-        />
+        </Card>
       ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {paginatedAgents.map((agent) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {agents.map((agent) => (
             <Card key={agent.id} className="hover-elevate" data-testid={`card-agent-${agent.id}`}>
               <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
                 <div className="flex-1">
@@ -527,8 +689,8 @@ export default function AIAgents() {
                     disabled={syncMutation.isPending}
                     data-testid={`button-sync-${agent.id}`}
                   >
-                    <RefreshCw className={`h-3 w-3 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} aria-hidden="true" />
-                    <span>{syncMutation.isPending ? 'Syncing...' : 'Sync Agent'}</span>
+                    <RefreshCw className={`h-3 w-3 mr-1 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                    {syncMutation.isPending ? 'Syncing...' : 'Sync Agent'}
                   </Button>
                 )}
                 <div className="flex gap-2 w-full">
@@ -538,10 +700,9 @@ export default function AIAgents() {
                       size="sm"
                       className="flex-1"
                       data-testid={`button-call-${agent.id}`}
-                      aria-label={`Initiate call with agent ${agent.name}`}
                     >
-                      <Phone className="h-3 w-3 mr-1" aria-hidden="true" />
-                      <span>Call</span>
+                      <Phone className="h-3 w-3 mr-1" />
+                      Call
                     </Button>
                   )}
                   <Button
@@ -573,20 +734,6 @@ export default function AIAgents() {
               </CardFooter>
             </Card>
           ))}
-          </div>
-          {filteredAgents.length > itemsPerPage && (
-            <div className="border-t pt-6">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                itemsPerPage={itemsPerPage}
-                totalItems={filteredAgents.length}
-                showingFrom={showingFrom}
-                showingTo={showingTo}
-              />
-            </div>
-          )}
         </div>
       )}
 
@@ -641,13 +788,12 @@ export default function AIAgents() {
         onSubmit={handleSubmit}
         mode={dialogMode}
         loading={dialogMode === "edit" ? updateMutation.isLoading : createMutation.isLoading}
+        agentFormSchema={agentFormSchema}
         models={bolnaModels}
         voices={bolnaVoices}
         providers={availableProviders}
         phoneNumbers={exotelPhoneNumbers}
         knowledgeBaseItems={knowledgeBaseItems}
-        bolnaModels={bolnaModels}
-        bolnaVoices={bolnaVoices}
       />
     </div>
   );

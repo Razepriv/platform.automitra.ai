@@ -9,33 +9,15 @@ import { setupAuth, isAuthenticated } from "./supabaseAuth";
 import { generateAISummary, analyzeLeadQualification, generateMeetingSummary, matchLeadsToAgents } from "./openai";
 import { bolnaClient } from "./bolna";
 import { exotelClient } from "./exotel";
+import { plivoClient } from "./plivo";
 import { startCallPolling, stopCallPolling, stopAllPolling, getPollingStats } from "./callPoller";
-import { 
-  createWelcomeNotification, 
-  createCallNotification, 
-  createBillingNotification,
-  createLeadAssignedNotification 
-} from "./utils/notifications";
-import { analyzeTranscriptForLeadAssignment } from "./utils/aiLeadAssigner";
-import { db } from "./db";
-import { leads, users, notifications, pipelines, type UserRole, type InsertNotification, type InsertPipeline } from "@shared/schema";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { syncAllPhoneNumbers, triggerManualSync, getSyncStats, syncOrganizationPhoneNumbers } from "./phoneNumberSync";
 import type { InsertLead, InsertChannelPartner, InsertCampaign, InsertCall, InsertVisit, InsertAiAgent, CreateAiAgentInput, UpdateAiAgentInput, InsertKnowledgeBase, CreateKnowledgeBaseInput, UpdateKnowledgeBaseInput, InsertPhoneNumber } from "@shared/schema";
 import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-    // Serve static files from public/uploads directory
-    const path = await import('path');
-    const fs = await import('fs');
-    const express = await import('express');
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'logos');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    app.use('/uploads', express.default.static(path.join(process.cwd(), 'public', 'uploads')));
-
     // Agent Template routes (user-specific)
     const { getAgentTemplatesForUser, createAgentTemplate, updateAgentTemplate, deleteAgentTemplate } = require('./agentTemplates');
 
@@ -651,6 +633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Legacy sync endpoint - now uses the new sync service for user's organization
   app.get('/api/phone-numbers/sync', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -659,141 +642,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const existingNumbers = await storage.getPhoneNumbers(user.organizationId);
-      const existingMap = new Map(existingNumbers.map((n) => [n.phoneNumber, n]));
-      const syncedNumbers = [];
-
-      console.log('[Phone Sync] Existing numbers:', existingNumbers.map(n => n.phoneNumber));
-      console.log('[Phone Sync] EXOTEL_PHONE_NUMBER:', process.env.EXOTEL_PHONE_NUMBER);
-      console.log('[Phone Sync] EXOTEL_PHONE_NUMBER_2:', process.env.EXOTEL_PHONE_NUMBER_2);
-
-      // Add configured Exotel number from environment variable
-      const configuredNumbers = [
-        {
-          phoneNumber: process.env.EXOTEL_PHONE_NUMBER,
-          appId: process.env.EXOTEL_OUTBOUND_APP_ID,
-          friendlyName: 'Exotel Voice Number'
-        }
-      ];
-
-      for (const configNum of configuredNumbers) {
-        if (configNum.phoneNumber) {
-          console.log('[Phone Sync] Processing configured number:', configNum.phoneNumber);
-          const phoneData: InsertPhoneNumber = {
-            organizationId: user.organizationId,
-            phoneNumber: configNum.phoneNumber,
-            provider: 'exotel',
-            exotelSid: configNum.appId || undefined,
-            friendlyName: configNum.friendlyName,
-            capabilities: {
-              voice: true,
-              sms: true,
-            },
-            status: 'active',
-          };
-
-          try {
-            const existingNumber = existingMap.get(configNum.phoneNumber);
-            
-            if (!existingNumber) {
-              console.log('[Phone Sync] Creating new number:', configNum.phoneNumber);
-              const created = await storage.createPhoneNumber(phoneData);
-              syncedNumbers.push(created);
-              existingMap.set(created.phoneNumber, created);
-              
-              // Emit real-time update
-              if ((app as any).emitPhoneNumberCreated) {
-                (app as any).emitPhoneNumberCreated(user.organizationId, created);
-              }
-            } else {
-              console.log('[Phone Sync] Number already exists:', configNum.phoneNumber);
-              syncedNumbers.push(existingNumber);
-            }
-          } catch (err) {
-            console.error("Error syncing configured phone number:", configNum.phoneNumber, err);
-          }
-        }
-      }
-
-      // Also fetch phone numbers from Exotel API if available
-      try {
-        const exotelNumbers = await exotelClient.getPhoneNumbers();
-        
-        for (const exotelNumber of exotelNumbers) {
-          const phoneData: InsertPhoneNumber = {
-            organizationId: user.organizationId,
-            phoneNumber: exotelNumber.PhoneNumber,
-            provider: 'exotel',
-            exotelSid: exotelNumber.Sid,
-            friendlyName: exotelNumber.FriendlyName,
-            capabilities: {
-              voice: true,
-              sms: true,
-            },
-            status: 'active',
-          };
-
-          try {
-            const existingNumber = existingMap.get(exotelNumber.PhoneNumber);
-            
-            if (!existingNumber) {
-              const created = await storage.createPhoneNumber(phoneData);
-              syncedNumbers.push(created);
-              existingMap.set(created.phoneNumber, created);
-              
-              // Emit real-time update
-              if ((app as any).emitPhoneNumberCreated) {
-                (app as any).emitPhoneNumberCreated(user.organizationId, created);
-              }
-            } else if (!syncedNumbers.find(n => n.phoneNumber === existingNumber.phoneNumber)) {
-              syncedNumbers.push(existingNumber);
-            }
-          } catch (err) {
-            console.error("Error syncing Exotel API phone number:", err);
-          }
-        }
-      } catch (exotelErr) {
-        console.warn("Could not fetch from Exotel API, using configured numbers only:", exotelErr);
-      }
-
-      // Emit real-time updates for all synced numbers
-      if ((app as any).emitPhoneNumberCreated || (app as any).emitPhoneNumberUpdate) {
-        for (const number of syncedNumbers) {
-          if ((app as any).emitPhoneNumberCreated) {
-            (app as any).emitPhoneNumberCreated(user.organizationId, number);
-          }
-        }
-      }
+      // Use the new sync service but only for this organization
+      const orgStats = await syncOrganizationPhoneNumbers(
+        user.organizationId,
+        emitPhoneNumberUpdate,
+        emitPhoneNumberCreated
+      );
       
-      res.json({ syncedNumbers, total: syncedNumbers.length });
-    } catch (error) {
+      // Get updated phone numbers
+      const syncedNumbers = await storage.getPhoneNumbers(user.organizationId);
+
+      res.json({ 
+        syncedNumbers, 
+        total: syncedNumbers.length,
+        created: orgStats.created,
+        updated: orgStats.updated,
+        errors: orgStats.errors
+      });
+    } catch (error: any) {
       console.error("Error syncing phone numbers:", error);
-      res.status(500).json({ message: "Failed to sync phone numbers" });
-    }
-  });
-
-  app.patch('/api/phone-numbers/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const phoneNumber = await storage.updatePhoneNumber(req.params.id, user.organizationId, req.body);
-      if (!phoneNumber) {
-        return res.status(404).json({ message: "Phone number not found" });
-      }
-      
-      // Emit real-time update
-      if ((app as any).emitPhoneNumberUpdate) {
-        (app as any).emitPhoneNumberUpdate(user.organizationId, phoneNumber);
-      }
-      
-      res.json(phoneNumber);
-    } catch (error) {
-      console.error("Error updating phone number:", error);
-      res.status(500).json({ message: "Failed to update phone number" });
+      res.status(500).json({ message: "Failed to sync phone numbers", error: error.message });
     }
   });
 
@@ -988,92 +856,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedCall = await storage.updateCall(call.id, call.organizationId, updates);
-
-      // Create notification and trigger AI lead assignment when call completes
-      if (normalizedStatus === 'completed' && updatedCall) {
-        try {
-          // Get all users in the organization for notifications
-          const orgUsers = await storage.getUsersByOrganization(call.organizationId);
-          
-          // Create notifications for all users in org
-          for (const orgUser of orgUsers) {
-            const notification = await createCallNotification(
-              orgUser.id,
-              call.organizationId,
-              call.id,
-              call.direction || 'outbound',
-              call.contactName || undefined
-            );
-            if ((app as any).emitNotificationCreated) {
-              (app as any).emitNotificationCreated(call.organizationId, notification);
-            }
-          }
-
-          // Trigger AI Lead Assignment if enabled and transcript is available
-          if (updatedCall.transcription && orgUsers.length > 0) {
-            // Use the first user's API key if available and enabled
-            const userWithAI = orgUsers.find(u => u.aiLeadAssignerEnabled && u.openaiApiKey);
-            if (userWithAI && userWithAI.openaiApiKey) {
-              try {
-                // Get pipelines for the organization
-                const orgPipelines = await db.select()
-                  .from(pipelines)
-                  .where(eq(pipelines.organizationId, call.organizationId));
-
-                // Analyze transcript and assign leads
-                const assignments = await analyzeTranscriptForLeadAssignment(
-                  updatedCall.transcription,
-                  userWithAI.openaiApiKey,
-                  orgPipelines.map(p => ({ name: p.name, stage: p.stage, description: p.description || undefined }))
-                );
-
-                // Process assignments
-                for (const assignment of assignments) {
-                  if (assignment.action === 'create' && assignment.leadData) {
-                    const newLead = await storage.createLead({
-                      organizationId: call.organizationId,
-                      name: assignment.leadData.name,
-                      email: assignment.leadData.email,
-                      phone: assignment.leadData.phone || call.contactPhone,
-                      company: assignment.leadData.company,
-                      notes: assignment.leadData.notes || assignment.reason,
-                      status: 'new',
-                      pipelineStage: assignment.pipelineStage,
-                      source: 'ai_assigned',
-                    });
-                    
-                    // Create notification for lead assignment
-                    for (const orgUser of orgUsers) {
-                      const notif = await createLeadAssignedNotification(
-                        orgUser.id,
-                        call.organizationId,
-                        newLead.id,
-                        newLead.name,
-                        assignment.pipelineStage
-                      );
-                      if ((app as any).emitNotificationCreated) {
-                        (app as any).emitNotificationCreated(call.organizationId, notif);
-                      }
-                    }
-                  } else if (assignment.action === 'update' && assignment.leadId && assignment.leadData) {
-                    // Update existing lead
-                    await storage.updateLead(assignment.leadId, call.organizationId, {
-                      pipelineStage: assignment.pipelineStage,
-                      notes: assignment.reason,
-                    });
-                  }
-                }
-              } catch (aiError) {
-                console.error("Error in AI lead assignment:", aiError);
-                // Don't fail the webhook if AI assignment fails
-              }
-            }
-          }
-        } catch (notifError) {
-          console.error("Error creating call notification:", notifError);
-          // Don't fail the webhook if notification creation fails
-        }
-      }
 
       // Emit real-time updates
       if ((app as any).emitCallUpdate && updatedCall) {
@@ -1486,9 +1268,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let kbs;
       if (agentId) {
-        kbs = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
+        kbs = await storage.getKnowledgeBasesByAgent(agentId, user.organizationId);
       } else {
-        kbs = await storage.getKnowledgeBase(user.organizationId);
+        kbs = await storage.getKnowledgeBasesByOrganization(user.organizationId);
       }
 
       res.json(kbs);
@@ -1501,7 +1283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get knowledge base details
   app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const kb = await storage.getKnowledgeBaseItem(req.params.id, req.user.organizationId);
+      const kb = await storage.getKnowledgeBase(req.params.id, req.user.organizationId);
 
       if (!kb) {
         return res.status(404).json({ message: "Knowledge base not found" });
@@ -1810,6 +1592,189 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bolna Available Phone Numbers
+  app.get('/api/bolna/available-phone-numbers', isAuthenticated, async (req: any, res) => {
+    try {
+      const { country, pattern, type } = req.query;
+      const phoneNumbers = await bolnaClient.searchAvailablePhoneNumbers({
+        country,
+        pattern,
+        type,
+      });
+      res.json(phoneNumbers);
+    } catch (error: any) {
+      console.error("Error fetching available phone numbers from Bolna:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch available phone numbers from Bolna", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Bolna Registered Phone Numbers
+  app.get('/api/bolna/phone-numbers', isAuthenticated, async (req: any, res) => {
+    try {
+      const phoneNumbers = await bolnaClient.listRegisteredPhoneNumbers();
+      res.json(phoneNumbers);
+    } catch (error: any) {
+      console.error("Error fetching registered phone numbers from Bolna:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch registered phone numbers from Bolna", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Plivo Available Phone Numbers
+  app.get('/api/plivo/available-phone-numbers', isAuthenticated, async (req: any, res) => {
+    try {
+      const { country_iso, type, pattern, region, services, limit, offset } = req.query;
+      const phoneNumbers = await plivoClient.searchAvailablePhoneNumbers({
+        country_iso,
+        type: type as "local" | "tollfree" | "any" | undefined,
+        pattern,
+        region,
+        services,
+        limit: limit ? parseInt(limit) : undefined,
+        offset: offset ? parseInt(offset) : undefined,
+      });
+      res.json(phoneNumbers);
+    } catch (error: any) {
+      console.error("Error fetching available phone numbers from Plivo:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch available phone numbers from Plivo", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Plivo Phone Numbers Management
+  app.get('/api/plivo/phone-numbers', isAuthenticated, async (req: any, res) => {
+    try {
+      const phoneNumbers = await plivoClient.getPhoneNumbers();
+      res.json(phoneNumbers);
+    } catch (error: any) {
+      console.error("Error fetching Plivo phone numbers:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch Plivo phone numbers", 
+        error: error.message 
+      });
+    }
+  });
+
+  app.get('/api/plivo/phone-numbers/:number', isAuthenticated, async (req: any, res) => {
+    try {
+      const phoneNumber = await plivoClient.getPhoneNumber(req.params.number);
+      res.json(phoneNumber);
+    } catch (error: any) {
+      console.error("Error fetching Plivo phone number:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch Plivo phone number", 
+        error: error.message 
+      });
+    }
+  });
+
+  app.post('/api/plivo/phone-numbers/:number/buy', isAuthenticated, async (req: any, res) => {
+    try {
+      const phoneNumber = await plivoClient.buyPhoneNumber(req.params.number);
+      res.json(phoneNumber);
+    } catch (error: any) {
+      console.error("Error buying Plivo phone number:", error);
+      res.status(500).json({ 
+        message: "Failed to buy Plivo phone number", 
+        error: error.message 
+      });
+    }
+  });
+
+  app.delete('/api/plivo/phone-numbers/:number', isAuthenticated, async (req: any, res) => {
+    try {
+      await plivoClient.releasePhoneNumber(req.params.number);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error releasing Plivo phone number:", error);
+      res.status(500).json({ 
+        message: "Failed to release Plivo phone number", 
+        error: error.message 
+      });
+    }
+  });
+
+  app.post('/api/plivo/phone-numbers/:number', isAuthenticated, async (req: any, res) => {
+    try {
+      const phoneNumber = await plivoClient.updatePhoneNumber(req.params.number, req.body);
+      res.json(phoneNumber);
+    } catch (error: any) {
+      console.error("Error updating Plivo phone number:", error);
+      res.status(500).json({ 
+        message: "Failed to update Plivo phone number", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Unified endpoint to check available numbers from all providers
+  app.get('/api/phone-numbers/available', isAuthenticated, async (req: any, res) => {
+    try {
+      const { country, country_iso, pattern, type, provider } = req.query;
+      const results: any = {
+        exotel: null,
+        bolna: null,
+        plivo: null,
+      };
+
+      // Check Exotel
+      if (!provider || provider === 'exotel') {
+        try {
+          const exotelParams: any = {};
+          if (country) exotelParams.Country = country;
+          if (pattern) exotelParams.Contains = pattern;
+          results.exotel = await exotelClient.getAvailablePhoneNumbers(exotelParams);
+        } catch (error: any) {
+          console.warn("Error fetching from Exotel:", error.message);
+          results.exotel = { error: error.message };
+        }
+      }
+
+      // Check Bolna
+      if (!provider || provider === 'bolna') {
+        try {
+          results.bolna = await bolnaClient.searchAvailablePhoneNumbers({
+            country: country || country_iso,
+            pattern,
+            type,
+          });
+        } catch (error: any) {
+          console.warn("Error fetching from Bolna:", error.message);
+          results.bolna = { error: error.message };
+        }
+      }
+
+      // Check Plivo
+      if (!provider || provider === 'plivo') {
+        try {
+          results.plivo = await plivoClient.searchAvailablePhoneNumbers({
+            country_iso: country_iso || country,
+            type: type as "local" | "tollfree" | "any" | undefined,
+            pattern,
+          });
+        } catch (error: any) {
+          console.warn("Error fetching from Plivo:", error.message);
+          results.plivo = { error: error.message };
+        }
+      }
+
+      res.json(results);
+    } catch (error: any) {
+      console.error("Error fetching available phone numbers:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch available phone numbers", 
+        error: error.message 
+      });
+    }
+  });
+
   // Exotel Calls
   app.get('/api/exotel/calls', isAuthenticated, async (req: any, res) => {
     try {
@@ -1903,6 +1868,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Knowledge Base routes
+  app.get('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const knowledge = await storage.getKnowledgeBase(user.organizationId);
+      
+      // Defensive validation
+      const validKnowledge = knowledge.filter(k => k.organizationId === user.organizationId);
+      if (validKnowledge.length !== knowledge.length) {
+        console.error("WARNING: Storage returned cross-tenant knowledge base data");
+      }
+      
+      res.json(validKnowledge);
+    } catch (error) {
+      console.error("Error fetching knowledge base:", error);
+      res.status(500).json({ message: "Failed to fetch knowledge base" });
+    }
+  });
+
+  app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const item = await storage.getKnowledgeBaseItem(req.params.id, user.organizationId);
+      if (!item) {
+        return res.status(404).json({ message: "Knowledge base item not found" });
+      }
+      
+      // Defensive validation
+      if (item.organizationId !== user.organizationId) {
+        console.error("WARNING: Storage returned cross-tenant knowledge base item");
+        return res.status(404).json({ message: "Knowledge base item not found" });
+      }
+      
+      res.json(item);
+    } catch (error) {
+      console.error("Error fetching knowledge base item:", error);
+      res.status(500).json({ message: "Failed to fetch knowledge base item" });
+    }
+  });
 
   app.post('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
     try {
@@ -1922,12 +1934,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const item = await storage.createKnowledgeBase(knowledgeData);
-      
-      // Emit real-time update
-      if ((app as any).emitKnowledgeBaseCreated) {
-        (app as any).emitKnowledgeBaseCreated(user.organizationId, item);
-      }
-      
       res.json(item);
     } catch (error) {
       console.error("Error creating knowledge base item:", error);
@@ -1954,11 +1960,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Knowledge base item not found" });
       }
       
-      // Emit real-time update
-      if ((app as any).emitKnowledgeBaseUpdate) {
-        (app as any).emitKnowledgeBaseUpdate(user.organizationId, item);
-      }
-      
       res.json(item);
     } catch (error) {
       console.error("Error updating knowledge base item:", error);
@@ -1982,123 +1983,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Knowledge base item not found" });
       }
       
-      // Emit real-time update
-      if ((app as any).emitKnowledgeBaseDeleted) {
-        (app as any).emitKnowledgeBaseDeleted(user.organizationId, req.params.id);
-      }
-      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting knowledge base item:", error);
       res.status(500).json({ message: "Failed to delete knowledge base item" });
-    }
-  });
-
-  // Sync knowledge base to Bolna - unifies all docs into one PDF
-  app.post('/api/knowledge-base/:agentId/sync-to-bolna', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { agentId } = req.params;
-      
-      // Verify agent belongs to organization
-      const agent = await storage.getAIAgent(agentId, user.organizationId);
-      if (!agent) {
-        return res.status(404).json({ message: "Agent not found" });
-      }
-
-      if (!agent.bolnaAgentId) {
-        return res.status(400).json({ message: "Agent must be synced to Bolna first" });
-      }
-
-      // Get all knowledge base items for this agent
-      const knowledgeItems = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
-      
-      if (knowledgeItems.length === 0) {
-        return res.status(400).json({ message: "No knowledge base items found for this agent" });
-      }
-
-      // Unify all knowledge items into a single PDF
-      const { unifyKnowledgeBaseToPDF } = await import('./utils/pdfUnifier');
-      const unifiedPDF = await unifyKnowledgeBaseToPDF(knowledgeItems);
-
-      // Upload unified PDF to Bolna
-      const bolnaKB = await bolnaClient.createKnowledgeBase(unifiedPDF, {
-        fileName: `knowledge_base_${agentId}_${Date.now()}.pdf`,
-        chunk_size: 1000,
-        similarity_top_k: 3,
-        overlapping: 200,
-      });
-
-      // Update agent with Bolna knowledge base ID (store in bolnaConfig)
-      const updatedBolnaConfig = {
-        ...(agent.bolnaConfig as any || {}),
-        knowledgeBaseRagId: bolnaKB.rag_id,
-      };
-      await storage.updateAIAgent(agentId, user.organizationId, {
-        bolnaConfig: updatedBolnaConfig,
-      });
-
-      res.json({
-        success: true,
-        ragId: bolnaKB.rag_id,
-        message: `Successfully unified ${knowledgeItems.length} knowledge base items into PDF and synced to Bolna`,
-      });
-    } catch (error) {
-      console.error("Error syncing knowledge base to Bolna:", error);
-      res.status(500).json({ message: "Failed to sync knowledge base to Bolna", error: (error as Error).message });
-    }
-  });
-
-  // Voice cloning endpoints
-  app.post('/api/voices/clone', isAuthenticated, upload.single('audio'), async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ message: "Audio file is required" });
-      }
-
-      const { voice_name, description } = req.body;
-      
-      const clonedVoice = await bolnaClient.cloneVoice(req.file, {
-        voice_name: voice_name || `Cloned Voice ${Date.now()}`,
-        description: description || `Voice cloned by ${user.email}`,
-        fileName: req.file.originalname,
-      });
-
-      res.json(clonedVoice);
-    } catch (error) {
-      console.error("Error cloning voice:", error);
-      res.status(500).json({ message: "Failed to clone voice", error: (error as Error).message });
-    }
-  });
-
-  app.get('/api/voices/cloned', isAuthenticated, async (req: any, res) => {
-    try {
-      const clonedVoices = await bolnaClient.getClonedVoices();
-      res.json(clonedVoices);
-    } catch (error) {
-      console.error("Error fetching cloned voices:", error);
-      res.status(500).json({ message: "Failed to fetch cloned voices" });
-    }
-  });
-
-  app.delete('/api/voices/cloned/:voiceId', isAuthenticated, async (req: any, res) => {
-    try {
-      await bolnaClient.deleteClonedVoice(req.params.voiceId);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting cloned voice:", error);
-      res.status(500).json({ message: "Failed to delete cloned voice" });
     }
   });
 
@@ -2173,12 +2061,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!campaign) {
         return res.status(404).json({ message: "Campaign not found" });
       }
-      
-      // Emit real-time update
-      if ((app as any).emitCampaignUpdate) {
-        (app as any).emitCampaignUpdate(user.organizationId, campaign);
-      }
-      
       res.json(campaign);
     } catch (error) {
       console.error("Error updating campaign:", error);
@@ -2197,205 +2079,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deleted) {
         return res.status(404).json({ message: "Campaign not found" });
       }
-      
-      // Emit real-time update
-      if ((app as any).emitCampaignDeleted) {
-        (app as any).emitCampaignDeleted(user.organizationId, req.params.id);
-      }
-      
       res.json({ message: "Campaign deleted successfully" });
     } catch (error) {
       console.error("Error deleting campaign:", error);
       res.status(500).json({ message: "Failed to delete campaign" });
-    }
-  });
-
-  // Campaign run endpoint - trigger outbound calls for a campaign using Bolna Batch API
-  app.post('/api/campaigns-run', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const { campaignId, scheduledAt } = req.body;
-      if (!campaignId) {
-        return res.status(400).json({ message: "campaignId required" });
-      }
-      
-      const campaign = await storage.getCampaign(campaignId, user.organizationId);
-      if (!campaign) {
-        return res.status(404).json({ message: "Campaign not found" });
-      }
-      
-      // Get leads for this campaign
-      const campaignLeads = await storage.getLeads(user.organizationId);
-      const campaignLeadsList = campaignLeads.filter(l => l.campaignId === campaignId && l.phone);
-      
-      if (campaignLeadsList.length === 0) {
-        return res.status(400).json({ message: "No leads with phone numbers in campaign" });
-      }
-      
-      // Get agents for this organization
-      const agents = await storage.getAIAgents(user.organizationId);
-      if (agents.length === 0) {
-        return res.status(400).json({ message: "No AI agents available" });
-      }
-      
-      // Get phone numbers
-      const phoneNumbers = await storage.getPhoneNumbers(user.organizationId);
-      if (phoneNumbers.length === 0) {
-        return res.status(400).json({ message: "No phone numbers available" });
-      }
-      
-      const defaultAgent = agents[0];
-      const defaultPhone = phoneNumbers[0];
-      
-      if (!defaultAgent.bolnaAgentId) {
-        return res.status(400).json({ message: "Default agent not synced to Bolna. Please sync the agent first." });
-      }
-      
-      // Generate CSV file for batch calling
-      // Bolna expects CSV with contact_number column and optional variables
-      const csvData = campaignLeadsList.map(lead => ({
-        contact_number: lead.phone,
-        contact_name: lead.name || '',
-        contact_email: lead.email || '',
-        contact_company: lead.company || '',
-        lead_id: lead.id,
-        campaign_id: campaignId,
-        organization_id: user.organizationId,
-      }));
-      
-      const csvContent = Papa.unparse(csvData);
-      const csvBuffer = Buffer.from(csvContent, 'utf-8');
-      
-      // Create batch file object
-      const batchFile = {
-        buffer: csvBuffer,
-        originalname: `campaign_${campaignId}_${Date.now()}.csv`,
-        filename: `campaign_${campaignId}_${Date.now()}.csv`,
-        mimetype: 'text/csv',
-        size: csvBuffer.length,
-      };
-      
-      try {
-        // Create batch using Bolna Batch API
-        const batchResult = await bolnaClient.createBatch({
-          agent_id: defaultAgent.bolnaAgentId,
-          file: batchFile,
-          from_phone_number: defaultPhone.phoneNumber,
-          scheduled_at: scheduledAt || undefined,
-          fileName: batchFile.originalname,
-        });
-        
-        console.log(`[Campaign Run] Batch created: ${batchResult.batch_id} for campaign ${campaignId}`);
-        
-        // Create call records for tracking (we'll update them via webhooks)
-        const callRecords = [];
-        for (const lead of campaignLeadsList) {
-          try {
-            const callData: InsertCall = {
-              organizationId: user.organizationId,
-              leadId: lead.id,
-              agentId: lead.assignedAgentId || defaultAgent.id,
-              phoneNumberId: defaultPhone.id,
-              contactName: lead.name,
-              contactPhone: lead.phone,
-              callType: 'outbound',
-              direction: 'outbound',
-              status: scheduledAt ? 'scheduled' : 'queued',
-              metadata: {
-                batchId: batchResult.batch_id,
-                campaignId: campaignId,
-              },
-            };
-            
-            const call = await storage.createCall(callData);
-            callRecords.push(call);
-          } catch (error: any) {
-            console.error(`[Campaign Run] Failed to create call record for lead ${lead.id}:`, error);
-          }
-        }
-        
-        // Emit real-time update
-        if ((app as any).emitCampaignUpdate) {
-          (app as any).emitCampaignUpdate(user.organizationId, {
-            campaignId,
-            batchId: batchResult.batch_id,
-            status: batchResult.status,
-            totalLeads: campaignLeadsList.length,
-          });
-        }
-        
-        res.json({ 
-          success: true, 
-          batchId: batchResult.batch_id,
-          batchStatus: batchResult.status,
-          totalLeads: campaignLeadsList.length,
-          scheduledAt: batchResult.scheduled_at || scheduledAt,
-          message: `Batch created successfully. ${campaignLeadsList.length} calls ${scheduledAt ? 'scheduled' : 'queued'} for execution.`
-        });
-      } catch (batchError: any) {
-        console.error("[Campaign Run] Batch API error:", batchError);
-        res.status(500).json({ 
-          message: "Failed to create batch", 
-          error: batchError.message 
-        });
-      }
-    } catch (error: any) {
-      console.error("Error running campaign:", error);
-      res.status(500).json({ message: "Failed to run campaign", error: error.message });
-    }
-  });
-
-  // Contacts endpoints
-  app.get('/api/contacts', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      const contacts = await storage.getContacts(user.organizationId);
-      res.json(contacts);
-    } catch (error) {
-      console.error("Error fetching contacts:", error);
-      res.status(500).json({ message: "Failed to fetch contacts" });
-    }
-  });
-
-  app.post('/api/contacts', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const { name, email, phone, company } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: "Name is required" });
-      }
-      
-      const contact = await storage.createContact({
-        organizationId: user.organizationId,
-        name,
-        email,
-        phone,
-        company,
-      });
-      
-      // Emit real-time update
-      if ((app as any).emitContactCreated) {
-        (app as any).emitContactCreated(user.organizationId, contact);
-      }
-      
-      res.json(contact);
-    } catch (error) {
-      console.error("Error creating contact:", error);
-      res.status(500).json({ message: "Failed to create contact" });
     }
   });
 
@@ -2545,48 +2232,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!lead) {
         return res.status(404).json({ message: "Lead not found" });
       }
-      
-      // Emit real-time update
-      if ((app as any).emitLeadUpdate) {
-        (app as any).emitLeadUpdate(user.organizationId, lead);
-      }
-      
       res.json(lead);
     } catch (error) {
       console.error("Error updating lead:", error);
       res.status(500).json({ message: "Failed to update lead" });
-    }
-  });
-
-  app.delete('/api/leads/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const lead = await storage.getLead(req.params.id, user.organizationId);
-      if (!lead) {
-        return res.status(404).json({ message: "Lead not found" });
-      }
-      
-      const deleted = await db.delete(leads)
-        .where(and(eq(leads.id, req.params.id), eq(leads.organizationId, user.organizationId)))
-        .returning();
-      
-      if (deleted.length > 0) {
-        // Emit real-time update
-        if ((app as any).emitLeadDeleted) {
-          (app as any).emitLeadDeleted(user.organizationId, req.params.id);
-        }
-        res.json({ success: true });
-      } else {
-        res.status(404).json({ message: "Lead not found" });
-      }
-    } catch (error) {
-      console.error("Error deleting lead:", error);
-      res.status(500).json({ message: "Failed to delete lead" });
     }
   });
 
@@ -2946,7 +2595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/organization/whitelabel', isAuthenticated, upload.single('logo'), async (req: any, res) => {
+  app.patch('/api/organization/whitelabel', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
@@ -2954,33 +2603,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const { companyName, primaryColor } = req.body;
-      let logoUrl = req.body.logoUrl; // Keep existing URL if no file uploaded
-
-      // Handle logo file upload
-      if (req.file) {
-        // Save file to public/uploads directory
-        const fs = await import('fs');
-        const path = await import('path');
-        const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'logos');
-        
-        // Ensure directory exists
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-
-        // Generate unique filename
-        const fileExt = path.extname(req.file.originalname);
-        const fileName = `logo_${user.organizationId}_${Date.now()}${fileExt}`;
-        const filePath = path.join(uploadsDir, fileName);
-
-        // Save file
-        fs.writeFileSync(filePath, req.file.buffer);
-
-        // Set logo URL to public path
-        logoUrl = `/uploads/logos/${fileName}`;
-      }
-
+      const { companyName, logoUrl, primaryColor } = req.body;
       const organization = await storage.updateOrganizationWhitelabel(
         user.organizationId,
         { companyName, logoUrl, primaryColor }
@@ -2995,417 +2618,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating organization whitelabel:", error);
       res.status(500).json({ message: "Failed to update organization whitelabel" });
-    }
-  });
-
-  app.patch('/api/organization/webhook', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { webhookUrl } = req.body;
-      
-      // Store webhook URL in organization metadata or a separate table
-      // For now, we'll update organization with webhookUrl in metadata
-      const organization = await storage.getOrganization(user.organizationId);
-      if (organization) {
-        // Update organization with webhook configuration
-        // This could be stored in a metadata field or separate webhooks table
-        res.json({ success: true, webhookUrl, message: "Webhook configured successfully" });
-      } else {
-        res.status(404).json({ message: "Organization not found" });
-      }
-    } catch (error) {
-      console.error("Error configuring webhook:", error);
-      res.status(500).json({ message: "Failed to configure webhook" });
-    }
-  });
-
-  // User profile endpoints
-  app.patch('/api/user/profile', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { firstName, lastName } = req.body;
-      const updatedUser = await storage.upsertUser({
-        ...user,
-        firstName: firstName || user.firstName,
-        lastName: lastName || user.lastName,
-      });
-      
-      res.json(updatedUser);
-    } catch (error) {
-      console.error("Error updating user profile:", error);
-      res.status(500).json({ message: "Failed to update user profile" });
-    }
-  });
-
-  // AI Lead Assigner settings
-  app.patch('/api/user/ai-lead-assigner', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { enabled, openaiApiKey } = req.body;
-      
-      const updateData: any = {};
-      if (typeof enabled === 'boolean') {
-        updateData.aiLeadAssignerEnabled = enabled;
-      }
-      if (openaiApiKey && typeof openaiApiKey === 'string' && openaiApiKey.trim().length > 0) {
-        // Validate OpenAI API key format
-        if (!openaiApiKey.startsWith('sk-')) {
-          return res.status(400).json({ message: "Invalid OpenAI API key format. Must start with 'sk-'" });
-        }
-        updateData.openaiApiKey = openaiApiKey.trim();
-      }
-
-      const updatedUser = await storage.upsertUser({
-        ...user,
-        ...updateData,
-      });
-      
-      // Don't return API key in response
-      const { openaiApiKey: _, ...safeUser } = updatedUser;
-      res.json(safeUser);
-    } catch (error) {
-      console.error("Error updating AI Lead Assigner settings:", error);
-      res.status(500).json({ message: "Failed to update AI Lead Assigner settings" });
-    }
-  });
-
-  // AI Lead Assigner settings
-  app.patch('/api/user/ai-lead-assigner', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { enabled, openaiApiKey } = req.body;
-      
-      const updateData: any = {};
-      if (typeof enabled === 'boolean') {
-        updateData.aiLeadAssignerEnabled = enabled;
-      }
-      if (openaiApiKey && typeof openaiApiKey === 'string' && openaiApiKey.trim().length > 0) {
-        // Validate OpenAI API key format
-        if (!openaiApiKey.startsWith('sk-')) {
-          return res.status(400).json({ message: "Invalid OpenAI API key format. Must start with 'sk-'" });
-        }
-        updateData.openaiApiKey = openaiApiKey.trim();
-      }
-
-      const updatedUser = await storage.upsertUser({
-        ...user,
-        ...updateData,
-      });
-      
-      // Don't return API key in response
-      const { openaiApiKey: _, ...safeUser } = updatedUser;
-      res.json(safeUser);
-    } catch (error) {
-      console.error("Error updating AI Lead Assigner settings:", error);
-      res.status(500).json({ message: "Failed to update AI Lead Assigner settings" });
-    }
-  });
-
-  // Team member management endpoints
-  app.post('/api/users/team-members', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const currentUser = await storage.getUser(userId);
-      if (!currentUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Only admins can create team members
-      if (currentUser.role !== 'admin') {
-        return res.status(403).json({ message: "Only admins can create team members" });
-      }
-
-      const { email, password, firstName, lastName, role } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-
-      // Validate email
-      const emailValidation = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-      if (!emailValidation) {
-        return res.status(400).json({ message: "Invalid email format" });
-      }
-
-      // Validate password
-      if (password.length < 8) {
-        return res.status(400).json({ message: "Password must be at least 8 characters" });
-      }
-
-      // Validate role
-      const validRoles: UserRole[] = ['admin', 'agent_manager', 'analyst', 'developer'];
-      const userRole: UserRole = validRoles.includes(role as UserRole) ? (role as UserRole) : 'agent_manager';
-
-      const lowerEmail = email.toLowerCase();
-
-      // Check if user already exists
-      const existingUser = await storage.getUser(lowerEmail);
-      if (existingUser) {
-        return res.status(400).json({ message: "User with this email already exists" });
-      }
-
-      // Create user in Supabase (if Supabase is enabled)
-      let supabaseUserId = lowerEmail;
-      if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && !process.env.BASIC_AUTH_ENABLED) {
-        try {
-          const { supabaseAdmin } = await import('./supabaseClient');
-          const { data, error } = await supabaseAdmin.auth.admin.createUser({
-            email: lowerEmail,
-            password: password,
-            email_confirm: true,
-            user_metadata: {
-              full_name: `${firstName || ''} ${lastName || ''}`.trim() || email.split('@')[0],
-              first_name: firstName,
-              last_name: lastName,
-            },
-          });
-
-          if (error) {
-            console.error("Error creating Supabase user:", error);
-            return res.status(400).json({ message: `Failed to create user: ${error.message}` });
-          }
-
-          if (data.user) {
-            supabaseUserId = data.user.id;
-          }
-        } catch (supabaseError) {
-          console.error("Supabase user creation error:", supabaseError);
-          // Fall back to basic auth if Supabase fails
-        }
-      }
-
-      // Create user in local database
-      const newUser = await storage.upsertUser({
-        id: supabaseUserId,
-        organizationId: currentUser.organizationId,
-        email: lowerEmail,
-        firstName: firstName || email.split('@')[0],
-        lastName: lastName,
-        role: userRole,
-      });
-
-      // Emit real-time update
-      if ((app as any).emitUserCreated) {
-        (app as any).emitUserCreated(currentUser.organizationId, newUser);
-      }
-
-      res.json({ 
-        success: true, 
-        user: {
-          ...newUser,
-          password: undefined, // Never return password
-        },
-        message: "Team member created successfully" 
-      });
-    } catch (error) {
-      console.error("Error creating team member:", error);
-      res.status(500).json({ message: "Failed to create team member", error: (error as Error).message });
-    }
-  });
-
-  app.patch('/api/users/team-members/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const currentUser = await storage.getUser(userId);
-      if (!currentUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Only admins can update team members
-      if (currentUser.role !== 'admin') {
-        return res.status(403).json({ message: "Only admins can update team members" });
-      }
-
-      const targetUserId = req.params.id;
-      const targetUser = await storage.getUser(targetUserId);
-      
-      if (!targetUser || targetUser.organizationId !== currentUser.organizationId) {
-        return res.status(404).json({ message: "Team member not found" });
-      }
-
-      const { firstName, lastName, role, email } = req.body;
-
-      // Validate role if provided
-      let updatedRole = targetUser.role;
-      if (role) {
-        const validRoles: UserRole[] = ['admin', 'agent_manager', 'analyst', 'developer'];
-        if (validRoles.includes(role as UserRole)) {
-          updatedRole = role as UserRole;
-        }
-      }
-
-      // Update user
-      const updatedUser = await storage.upsertUser({
-        ...targetUser,
-        firstName: firstName !== undefined ? firstName : targetUser.firstName,
-        lastName: lastName !== undefined ? lastName : targetUser.lastName,
-        role: updatedRole,
-        email: email || targetUser.email,
-      });
-
-      // Emit real-time update
-      if ((app as any).emitUserUpdated) {
-        (app as any).emitUserUpdated(currentUser.organizationId, updatedUser);
-      }
-
-      res.json({ 
-        success: true, 
-        user: updatedUser,
-        message: "Team member updated successfully" 
-      });
-    } catch (error) {
-      console.error("Error updating team member:", error);
-      res.status(500).json({ message: "Failed to update team member" });
-    }
-  });
-
-  app.delete('/api/users/team-members/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const currentUser = await storage.getUser(userId);
-      if (!currentUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Only admins can delete team members
-      if (currentUser.role !== 'admin') {
-        return res.status(403).json({ message: "Only admins can delete team members" });
-      }
-
-      const targetUserId = req.params.id;
-
-      // Prevent deleting yourself
-      if (targetUserId === userId) {
-        return res.status(400).json({ message: "You cannot delete your own account" });
-      }
-
-      const targetUser = await storage.getUser(targetUserId);
-      
-      if (!targetUser || targetUser.organizationId !== currentUser.organizationId) {
-        return res.status(404).json({ message: "Team member not found" });
-      }
-
-      // Delete user from Supabase if applicable
-      if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && !process.env.BASIC_AUTH_ENABLED) {
-        try {
-          const { supabaseAdmin } = await import('./supabaseClient');
-          await supabaseAdmin.auth.admin.deleteUser(targetUserId);
-        } catch (supabaseError) {
-          console.error("Error deleting Supabase user:", supabaseError);
-          // Continue with local deletion even if Supabase deletion fails
-        }
-      }
-
-      // Delete user from local database
-      await db.delete(users)
-        .where(and(eq(users.id, targetUserId), eq(users.organizationId, currentUser.organizationId)));
-
-      // Emit real-time update
-      if ((app as any).emitUserDeleted) {
-        (app as any).emitUserDeleted(currentUser.organizationId, targetUserId);
-      }
-
-      res.json({ success: true, message: "Team member deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting team member:", error);
-      res.status(500).json({ message: "Failed to delete team member" });
-    }
-  });
-
-  app.post('/api/user/enable-2fa', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // In a real implementation, you would:
-      // 1. Generate a secret key for TOTP
-      // 2. Store it securely
-      // 3. Return QR code for user to scan
-      // For now, we'll just acknowledge the request
-      
-      res.json({ 
-        success: true, 
-        message: "2FA enabled successfully",
-        // In production, you'd return: { secret, qrCode }
-      });
-    } catch (error) {
-      console.error("Error enabling 2FA:", error);
-      res.status(500).json({ message: "Failed to enable 2FA" });
-    }
-  });
-
-  // User notification preferences endpoints
-  app.post('/api/user/notifications/email', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { enabled } = req.body;
-      
-      // Store notification preference (could be in user metadata or separate table)
-      res.json({ 
-        success: true, 
-        enabled,
-        message: "Email notifications configured successfully" 
-      });
-    } catch (error) {
-      console.error("Error configuring email notifications:", error);
-      res.status(500).json({ message: "Failed to configure email notifications" });
-    }
-  });
-
-  app.post('/api/user/notifications/call-alerts', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { enabled } = req.body;
-      
-      // Store notification preference
-      res.json({ 
-        success: true, 
-        enabled,
-        message: "Call alerts configured successfully" 
-      });
-    } catch (error) {
-      console.error("Error configuring call alerts:", error);
-      res.status(500).json({ message: "Failed to configure call alerts" });
-    }
-  });
-
-  app.post('/api/user/notifications/daily-summary', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { enabled } = req.body;
-      
-      // Store notification preference
-      res.json({ 
-        success: true, 
-        enabled,
-        message: "Daily summary configured successfully" 
-      });
-    } catch (error) {
-      console.error("Error configuring daily summary:", error);
-      res.status(500).json({ message: "Failed to configure daily summary" });
     }
   });
 
@@ -3432,17 +2644,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     socket.on('leave:organization', (organizationId: string) => {
       socket.leave(`org:${organizationId}`);
       console.log(`Client ${socket.id} left organization room: org:${organizationId}`);
-    });
-
-    // Join user-specific room for notifications
-    socket.on('join:user', (userId: string) => {
-      socket.join(`user:${userId}`);
-      console.log(`Client ${socket.id} joined user room: user:${userId}`);
-    });
-
-    socket.on('leave:user', (userId: string) => {
-      socket.leave(`user:${userId}`);
-      console.log(`Client ${socket.id} left user room: user:${userId}`);
     });
     
     socket.on('disconnect', () => {
@@ -3531,30 +2732,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     io.to(`org:${organizationId}`).emit('phone:created', phone);
   };
 
-  const emitNotificationCreated = (organizationId: string, notification: any) => {
-    // Emit to specific user's room as well as org room
-    io.to(`user:${notification.userId}`).emit('notification:created', notification);
-    io.to(`org:${organizationId}`).emit('notification:created', notification);
-  };
-
   const emitOrganizationUpdate = (organizationId: string, org: any) => {
     io.to(`org:${organizationId}`).emit('organization:updated', org);
   };
 
   const emitCreditsUpdate = (organizationId: string, credits: number) => {
     io.to(`org:${organizationId}`).emit('credits:updated', { credits });
-  };
-
-  const emitUserCreated = (organizationId: string, user: any) => {
-    io.to(`org:${organizationId}`).emit('user:created', user);
-  };
-
-  const emitUserUpdated = (organizationId: string, user: any) => {
-    io.to(`org:${organizationId}`).emit('user:updated', user);
-  };
-
-  const emitUserDeleted = (organizationId: string, userId: string) => {
-    io.to(`org:${organizationId}`).emit('user:deleted', { userId });
   };
 
   // Store io instance and helper functions for use in other parts of the app
@@ -3581,9 +2764,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   (app as any).emitCreditsUpdate = emitCreditsUpdate;
   (app as any).emitContactCreated = emitContactCreated;
   (app as any).emitContactUpdated = emitContactUpdated;
-  (app as any).emitUserCreated = emitUserCreated;
-  (app as any).emitUserUpdated = emitUserUpdated;
-  (app as any).emitUserDeleted = emitUserDeleted;
+
+  // Start automatic phone number syncing with WebSocket support
+  const { startPhoneNumberSync } = require('./phoneNumberSync');
+  // Start sync after a short delay to ensure everything is initialized
+  setTimeout(() => {
+    startPhoneNumberSync(emitPhoneNumberUpdate, emitPhoneNumberCreated);
+  }, 2000);
+
+  // Phone number sync API endpoints
+  app.post('/api/phone-numbers/sync/manual', isAuthenticated, async (req: any, res) => {
+    try {
+      const stats = await triggerManualSync(emitPhoneNumberUpdate, emitPhoneNumberCreated);
+      res.json({ 
+        success: true, 
+        message: 'Phone numbers synced successfully',
+        stats 
+      });
+    } catch (error: any) {
+      console.error("Error in manual phone number sync:", error);
+      res.status(500).json({ message: "Failed to sync phone numbers", error: error.message });
+    }
+  });
+
+  app.get('/api/phone-numbers/sync/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const stats = getSyncStats();
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Error getting sync stats:", error);
+      res.status(500).json({ message: "Failed to get sync stats", error: error.message });
+    }
+  });
 
   // Auto-assign leads using "AI" (Simulated logic for now, or simple round-robin)
   app.post('/api/leads/auto-assign', isAuthenticated, async (req: any, res) => {
@@ -3633,187 +2845,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error auto-assigning leads:", error);
       res.status(500).json({ message: "Failed to auto-assign leads" });
-    }
-  });
-
-  // Notification endpoints
-  app.get('/api/notifications', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const userNotifications = await db.select()
-        .from(notifications)
-        .where(eq(notifications.userId, userId))
-        .orderBy(desc(notifications.createdAt))
-        .limit(100);
-
-      res.json(userNotifications);
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-      res.status(500).json({ message: "Failed to fetch notifications" });
-    }
-  });
-
-  app.patch('/api/notifications/:id/read', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const notificationId = req.params.id;
-
-      await db.update(notifications)
-        .set({ read: true })
-        .where(and(
-          eq(notifications.id, notificationId),
-          eq(notifications.userId, userId)
-        ));
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error marking notification as read:", error);
-      res.status(500).json({ message: "Failed to update notification" });
-    }
-  });
-
-  app.post('/api/notifications/read-all', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-
-      await db.update(notifications)
-        .set({ read: true })
-        .where(and(
-          eq(notifications.userId, userId),
-          eq(notifications.read, false)
-        ));
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error marking all notifications as read:", error);
-      res.status(500).json({ message: "Failed to update notifications" });
-    }
-  });
-
-  app.delete('/api/notifications/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const notificationId = req.params.id;
-
-      await db.delete(notifications)
-        .where(and(
-          eq(notifications.id, notificationId),
-          eq(notifications.userId, userId)
-        ));
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting notification:", error);
-      res.status(500).json({ message: "Failed to delete notification" });
-    }
-  });
-
-  // Pipeline endpoints
-  app.get('/api/pipelines', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const orgPipelines = await db.select()
-        .from(pipelines)
-        .where(eq(pipelines.organizationId, user.organizationId))
-        .orderBy(asc(pipelines.order));
-
-      res.json(orgPipelines);
-    } catch (error) {
-      console.error("Error fetching pipelines:", error);
-      res.status(500).json({ message: "Failed to fetch pipelines" });
-    }
-  });
-
-  app.post('/api/pipelines', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const { name, description, stage, order, color, isDefault } = req.body;
-
-      if (!name || !stage) {
-        return res.status(400).json({ message: "Name and stage are required" });
-      }
-
-      const newPipeline: InsertPipeline = {
-        organizationId: user.organizationId,
-        name,
-        description,
-        stage,
-        order: order || 0,
-        color,
-        isDefault: isDefault || false,
-      };
-
-      const [created] = await db.insert(pipelines).values(newPipeline).returning();
-      res.json(created);
-    } catch (error) {
-      console.error("Error creating pipeline:", error);
-      res.status(500).json({ message: "Failed to create pipeline" });
-    }
-  });
-
-  app.patch('/api/pipelines/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const pipelineId = req.params.id;
-      const { name, description, stage, order, color, isDefault } = req.body;
-
-      const [updated] = await db.update(pipelines)
-        .set({
-          ...(name && { name }),
-          ...(description !== undefined && { description }),
-          ...(stage && { stage }),
-          ...(order !== undefined && { order }),
-          ...(color !== undefined && { color }),
-          ...(isDefault !== undefined && { isDefault }),
-          updatedAt: new Date(),
-        })
-        .where(and(
-          eq(pipelines.id, pipelineId),
-          eq(pipelines.organizationId, user.organizationId)
-        ))
-        .returning();
-
-      if (!updated) {
-        return res.status(404).json({ message: "Pipeline not found" });
-      }
-
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating pipeline:", error);
-      res.status(500).json({ message: "Failed to update pipeline" });
-    }
-  });
-
-  app.delete('/api/pipelines/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const pipelineId = req.params.id;
-
-      await db.delete(pipelines)
-        .where(and(
-          eq(pipelines.id, pipelineId),
-          eq(pipelines.organizationId, user.organizationId)
-        ));
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting pipeline:", error);
-      res.status(500).json({ message: "Failed to delete pipeline" });
     }
   });
 

@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { stopAllPolling } from "./callPoller";
+import { stopPhoneNumberSync } from "./phoneNumberSync";
 
 export const app = express();
 
@@ -86,10 +87,14 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
   });
 
+  // Start automatic phone number syncing (will be initialized after routes are registered)
+  // The sync service will be started in registerRoutes after WebSocket is set up
+
   // Graceful shutdown
   const shutdown = () => {
     log('Shutting down gracefully...');
     stopAllPolling();
+    stopPhoneNumberSync();
     server.close(() => {
       log('Server closed');
       process.exit(0);

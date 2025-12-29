@@ -1,7 +1,4 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { Pagination } from "@/components/Pagination";
-import { EmptyState } from "@/components/EmptyState";
-import { SkeletonTable } from "@/components/SkeletonTable";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -58,7 +55,6 @@ import {
   Volume2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -131,10 +127,8 @@ export default function CallHistory() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = require("@/hooks/useAuth").useAuth();
 
   // Auto-open dialog from Quick Actions
   useEffect(() => {
@@ -161,6 +155,17 @@ export default function CallHistory() {
   });
 
   // Real-time call updates via WebSocket
+  // Real-time phone number updates
+  useWebSocketEvent('phone:created', useCallback(() => {
+    console.log('[CallHistory] Received phone:created event');
+    queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
+  }, []));
+
+  useWebSocketEvent('phone:updated', useCallback(() => {
+    console.log('[CallHistory] Received phone:updated event');
+    queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
+  }, []));
+
   useWebSocketEvent<Call>('call:created', useCallback((newCall: Call) => {
     console.log('[CallHistory] Received call:created', newCall);
     queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
@@ -296,33 +301,18 @@ export default function CallHistory() {
     },
   });
 
-  // Filter calls based on search and status
-  const filteredCalls = useMemo(() => {
-    return calls.filter(call => {
-      const matchesSearch = 
-        call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        call.contactPhone?.includes(searchQuery) ||
-        call.agentId?.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesStatus = statusFilter === 'all' || call.status === statusFilter;
+  const filteredCalls = calls.filter((call) => {
+    // Only show calls made by the logged-in user
+    if (call.userId !== user?.id) return false;
+    const matchesSearch =
+      !searchQuery ||
+      call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      call.contactPhone?.toLowerCase().includes(searchQuery.toLowerCase());
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [calls, searchQuery, statusFilter]);
+    const matchesStatus = statusFilter === "all" || call.status === statusFilter;
 
-  // Pagination
-  const totalPages = Math.ceil(filteredCalls.length / itemsPerPage);
-  const paginatedCalls = filteredCalls.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-  const showingFrom = filteredCalls.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
-  const showingTo = Math.min(currentPage * itemsPerPage, filteredCalls.length);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, statusFilter]);
+    return matchesSearch && matchesStatus;
+  });
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -361,27 +351,21 @@ export default function CallHistory() {
             onClick={exportCallsToCSV}
             disabled={filteredCalls.length === 0}
             data-testid="button-export"
-            aria-label={`Export ${filteredCalls.length} calls to CSV`}
           >
-            <Download className="w-4 h-4 mr-2" aria-hidden="true" />
-            <span>Export ({filteredCalls.length})</span>
+            <Download className="w-4 h-4 mr-2" />
+            Export ({filteredCalls.length})
           </Button>
           <Button 
             variant="outline" 
             onClick={() => refetchCalls()}
             data-testid="button-refresh"
-            aria-label="Refresh call history"
           >
-            <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
-            <span>Refresh</span>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
           </Button>
-          <Button 
-            onClick={() => setIsNewCallDialogOpen(true)} 
-            data-testid="button-new-call"
-            aria-label="Initiate a new call"
-          >
-            <PhoneCall className="w-4 h-4 mr-2" aria-hidden="true" />
-            <span>New Call</span>
+          <Button onClick={() => setIsNewCallDialogOpen(true)} data-testid="button-new-call">
+            <PhoneCall className="w-4 h-4 mr-2" />
+            New Call
           </Button>
         </div>
       </div>
@@ -485,41 +469,18 @@ export default function CallHistory() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-6" data-testid="loading-calls">
-              <SkeletonTable rows={5} columns={9} />
-            </div>
-          ) : filteredCalls.length === 0 && calls.length === 0 ? (
-            <div className="p-6" data-testid="empty-calls">
-              <EmptyState
-                icon={PhoneCall}
-                title="No Calls Yet"
-                description="Call history will appear here once you start making calls with your AI agents"
-                action={
-                  <Button onClick={() => setIsNewCallDialogOpen(true)}>
-                    <PhoneCall className="h-4 w-4 mr-2" />
-                    Make Your First Call
-                  </Button>
-                }
-              />
+            <div className="flex items-center justify-center py-12" data-testid="loading-calls">
+              <div className="text-muted-foreground">Loading calls...</div>
             </div>
           ) : filteredCalls.length === 0 ? (
-            <div className="p-6" data-testid="empty-filtered-calls">
-              <EmptyState
-                icon={Search}
-                title="No calls found"
-                description={`No calls match your search "${searchQuery}"${statusFilter !== "all" ? ` and status "${statusFilter}"` : ""}`}
-                action={
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setSearchQuery("");
-                      setStatusFilter("all");
-                    }}
-                  >
-                    Clear Filters
-                  </Button>
-                }
-              />
+            <div className="flex flex-col items-center justify-center py-12" data-testid="empty-calls">
+              <Phone className="w-12 h-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No calls found</h3>
+              <p className="text-muted-foreground text-center max-w-md">
+                {searchQuery || statusFilter !== "all"
+                  ? "Try adjusting your filters to see more results."
+                  : "Call history will appear here once you start making calls with your AI agents."}
+              </p>
             </div>
           ) : (
             <Table>
@@ -537,20 +498,11 @@ export default function CallHistory() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedCalls.map((call) => (
+                {filteredCalls.map((call) => (
                   <TableRow
                     key={call.id}
                     className="hover-elevate cursor-pointer"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedCall(call);
-                      }
-                    }}
                     onClick={() => setSelectedCall(call)}
-                    role="button"
-                    aria-label={`Call to ${call.contactName || call.contactPhone || 'Unknown'}`}
                     data-testid={`row-call-${call.id}`}
                   >
                     <TableCell data-testid={`text-date-${call.id}`}>
@@ -626,19 +578,6 @@ export default function CallHistory() {
                 ))}
               </TableBody>
             </Table>
-          )}
-          {!isLoading && filteredCalls.length > 0 && (
-            <div className="border-t">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={setCurrentPage}
-                itemsPerPage={itemsPerPage}
-                totalItems={filteredCalls.length}
-                showingFrom={showingFrom}
-                showingTo={showingTo}
-              />
-            </div>
           )}
         </CardContent>
       </Card>
