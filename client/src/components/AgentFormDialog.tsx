@@ -90,10 +90,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto" aria-describedby="agent-form-description">
         <DialogHeader>
           <DialogTitle>{mode === "edit" ? "Edit Agent" : "Create Agent"}</DialogTitle>
         </DialogHeader>
+        <p id="agent-form-description" className="sr-only">
+          {mode === "edit" ? "Edit AI agent configuration" : "Create a new AI agent"}
+        </p>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {/* Agent Name */}

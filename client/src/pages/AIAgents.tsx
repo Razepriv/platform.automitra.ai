@@ -355,27 +355,29 @@ export default function AIAgents() {
       if (!selectedAgent) throw new Error("No agent selected");
       
       // Build payload - only include defined fields from schema
+      // Preserve existing values if not provided in update
       const payload: any = {
-        name: data.name,
-        model: data.model,
-        language: data.language,
-        temperature: data.temperature ?? 0.7,
-        maxDuration: data.maxDuration ?? 600,
-        maxTokens: data.maxTokens ?? 150,
-        provider: data.provider ?? "openai",
-        voiceProvider: data.voiceProvider ?? "elevenlabs",
-        status: data.status ?? "active",
-        callForwardingEnabled: data.callForwardingEnabled ?? false,
+        name: data.name || selectedAgent.name,
+        model: data.model || selectedAgent.model,
+        language: data.language || selectedAgent.language,
+        temperature: data.temperature !== undefined ? data.temperature : (selectedAgent.temperature ?? 0.7),
+        maxDuration: data.maxDuration !== undefined ? data.maxDuration : (selectedAgent.maxDuration ?? 600),
+        maxTokens: data.maxTokens !== undefined ? data.maxTokens : (selectedAgent.maxTokens ?? 150),
+        provider: data.provider || selectedAgent.provider || "openai",
+        voiceProvider: data.voiceProvider || selectedAgent.voiceProvider || "elevenlabs",
+        status: data.status || selectedAgent.status || "active",
+        callForwardingEnabled: data.callForwardingEnabled !== undefined ? data.callForwardingEnabled : (selectedAgent.callForwardingEnabled ?? false),
       };
       
-      // Only add optional fields if they have values
-      if (data.description) payload.description = data.description;
-      if (data.voiceId) payload.voiceId = data.voiceId;
-      if (data.voiceName) payload.voiceName = data.voiceName;
-      if (data.systemPrompt) payload.systemPrompt = data.systemPrompt;
-      if (data.userPrompt) payload.userPrompt = data.userPrompt;
-      if (data.firstMessage) payload.firstMessage = data.firstMessage;
-      if (data.knowledgeBaseIds && data.knowledgeBaseIds.length > 0) {
+      // Only add optional fields if they have values or preserve existing
+      if (data.description !== undefined) payload.description = data.description;
+      if (data.voiceId !== undefined) payload.voiceId = data.voiceId;
+      else if (selectedAgent.voiceId) payload.voiceId = selectedAgent.voiceId; // Preserve existing voiceId
+      if (data.voiceName !== undefined) payload.voiceName = data.voiceName;
+      if (data.systemPrompt !== undefined) payload.systemPrompt = data.systemPrompt;
+      if (data.userPrompt !== undefined) payload.userPrompt = data.userPrompt;
+      if (data.firstMessage !== undefined) payload.firstMessage = data.firstMessage;
+      if (data.knowledgeBaseIds !== undefined) {
         payload.knowledgeBaseIds = data.knowledgeBaseIds;
       }
       if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;

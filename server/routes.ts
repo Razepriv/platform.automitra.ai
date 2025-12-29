@@ -220,11 +220,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sync updates to Bolna if agent has Bolna integration
       if (existingAgent.bolnaAgentId) {
         try {
-          const mergedData = { ...existingAgent, ...updateData };
+          // Ensure voiceId and voiceProvider are included for Bolna update
+          const mergedData = { 
+            ...existingAgent, 
+            ...updateData,
+            voiceId: updateData.voiceId || existingAgent.voiceId,
+            voiceProvider: updateData.voiceProvider || existingAgent.voiceProvider,
+          };
+          console.log(`[Update Agent] Syncing to Bolna with voiceId: ${mergedData.voiceId}, voiceProvider: ${mergedData.voiceProvider}`);
           await bolnaClient.updateAgent(existingAgent.bolnaAgentId, mergedData as any);
-        } catch (bolnaError) {
+        } catch (bolnaError: any) {
           console.error("Bolna API update error:", bolnaError);
+          console.error("Bolna error details:", {
+            message: bolnaError?.message,
+            response: bolnaError?.response?.data || bolnaError?.response,
+            status: bolnaError?.response?.status,
+          });
           // Continue with local update even if Bolna sync fails
+          // But log the error so we can see what went wrong
         }
       }
       
@@ -242,10 +255,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(agent);
     } catch (error) {
       console.error("Error updating AI agent:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        body: req.body,
+        agentId: req.params.id,
+      });
+      
       if (error instanceof Error && 'issues' in error) {
-        return res.status(400).json({ message: "Invalid request data", errors: (error as any).issues });
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: (error as any).issues,
+          error: error.message 
+        });
       }
-      res.status(500).json({ message: "Failed to update AI agent" });
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ 
+        message: "Failed to update AI agent",
+        error: errorMessage 
+      });
     }
   });
 
