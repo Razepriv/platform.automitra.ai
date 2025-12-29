@@ -20,7 +20,7 @@ interface AgentFormDialogProps {
   models: { id?: string; name?: string; model?: string; provider?: string; description?: string }[];
   voices: { id?: string; voice_id?: string; name?: string; voice_name?: string; provider?: string }[];
   providers: string[];
-  phoneNumbers: { id: string; number: string }[];
+  phoneNumbers: { id: string; phoneNumber: string; provider?: string; friendlyName?: string }[];
   knowledgeBaseItems: { id: string; title: string }[];
 }
 
@@ -167,7 +167,9 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     <select {...field} className="input">
                       <option value="">Select Number</option>
                       {phoneNumbers.map((n) => (
-                        <option key={n.id} value={n.id}>{n.number}</option>
+                        <option key={n.id} value={n.id}>
+                          {n.phoneNumber || n.number || n.id} {n.provider ? `(${n.provider})` : ''} {n.friendlyName ? `- ${n.friendlyName}` : ''}
+                        </option>
                       ))}
                     </select>
                   </FormControl>

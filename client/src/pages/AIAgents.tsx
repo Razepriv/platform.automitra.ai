@@ -797,7 +797,12 @@ export default function AIAgents() {
         models={bolnaModels}
         voices={bolnaVoices}
         providers={availableProviders}
-        phoneNumbers={exotelPhoneNumbers}
+        phoneNumbers={exotelPhoneNumbers.map(p => ({
+          id: p.id,
+          phoneNumber: p.phoneNumber,
+          provider: p.provider,
+          friendlyName: p.friendlyName || undefined,
+        }))}
         knowledgeBaseItems={knowledgeBaseItems}
       />
     </div>

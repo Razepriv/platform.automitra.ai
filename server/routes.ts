@@ -397,7 +397,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let bolnaAgent;
         if (agent.bolnaAgentId) {
           console.log(`Agent has existing Bolna ID: ${agent.bolnaAgentId}, updating...`);
-          bolnaAgent = await bolnaClient.updateAgent(agent.bolnaAgentId, { ...agent, telephonyProvider } as any);
+          // Ensure all required fields are included when updating
+          const updateData = {
+            ...agent,
+            telephonyProvider,
+            voiceId: agent.voiceId, // Ensure voiceId is included
+            voiceProvider: agent.voiceProvider, // Ensure voiceProvider is included
+          };
+          bolnaAgent = await bolnaClient.updateAgent(agent.bolnaAgentId, updateData as any);
         } else {
           console.log(`Creating new Bolna agent...`);
           bolnaAgent = await bolnaClient.createAgent({ ...agent, telephonyProvider } as any);

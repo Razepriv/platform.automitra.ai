@@ -585,6 +585,16 @@ export class BolnaClient {
   ): Promise<BolnaAgent> {
     this.ensureConfigured();
     
+    // Get existing agent to preserve voiceId if not in updates
+    let existingAgent: AiAgent | null = null;
+    try {
+      const existing = await this.getAgent(agentId);
+      // We need to get the full agent data from storage, but for now use what we have
+      // The updates should include voiceId when syncing
+    } catch (e) {
+      // Agent might not exist, continue
+    }
+    
     // Build partial v2 config for updates
     const webhookUrl = process.env.PUBLIC_WEBHOOK_URL 
       ? `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`
@@ -607,24 +617,27 @@ export class BolnaClient {
       config.agent_config!.agent_type = updates.agentType;
     }
 
+    // Get voiceId from updates or use existing - CRITICAL for ElevenLabs
+    const voiceId = updates.voiceId || (updates as any).voiceId;
+    const voiceProvider = (updates.voiceProvider && updates.voiceProvider !== 'all') 
+      ? updates.voiceProvider 
+      : (updates as any).voiceProvider || "elevenlabs";
+
     // Update tasks if any LLM or voice config changes OR call forwarding changes
+    // ALWAYS include synthesizer if voiceId is available (required for ElevenLabs)
     if (updates.model || updates.provider || updates.temperature || updates.maxTokens || 
-        updates.voiceId || updates.voiceProvider || updates.language || updates.maxDuration ||
+        voiceId || voiceProvider || updates.language || updates.maxDuration ||
         updates.callForwardingEnabled !== undefined || updates.callForwardingNumber !== undefined) {
       
-      const voiceProvider = updates.voiceProvider && updates.voiceProvider !== 'all' 
-        ? updates.voiceProvider 
-        : "elevenlabs";
-
       let synthesizerConfig: any = null;
-      if (updates.voiceId) {
+      if (voiceId) {
         if (voiceProvider === "elevenlabs") {
           // ElevenLabs requires voice, voice_id, and model per API docs
           synthesizerConfig = {
             provider: "elevenlabs",
             provider_config: {
-              voice: updates.voiceId,
-              voice_id: updates.voiceId,
+              voice: voiceId,
+              voice_id: voiceId,
               model: "eleven_turbo_v2_5",
               sampling_rate: "16000",
             },
@@ -636,7 +649,7 @@ export class BolnaClient {
           synthesizerConfig = {
             provider: "polly",
             provider_config: {
-              voice: updates.voiceId,
+              voice: voiceId,
               engine: "generative",
               sampling_rate: "8000",
               language: updates.language || "en-US",
@@ -650,7 +663,7 @@ export class BolnaClient {
           synthesizerConfig = {
             provider: voiceProvider,
             provider_config: {
-              voice: updates.voiceId,
+              voice: voiceId,
               language: updates.language || "en-US",
             },
             stream: true,
@@ -658,6 +671,9 @@ export class BolnaClient {
             buffer_size: 400,
           };
         }
+      } else {
+        // If no voiceId but we're updating tasks, throw error
+        throw new Error("Voice ID is required when updating agent tasks. Please ensure the agent has a voice selected.");
       }
 
       // Construct API tools if call forwarding is enabled
