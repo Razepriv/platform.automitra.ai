@@ -173,16 +173,23 @@ export default function AIAgents() {
     },
   });
 
-  // Get unique providers from voices
-  const availableProviders = useMemo(() => {
+  // Get unique LLM providers from models (not voice providers)
+  const availableLLMProviders = useMemo(() => {
     const providers = new Set<string>();
-    bolnaVoices.forEach(voice => {
-      if (voice.provider) {
-        providers.add(voice.provider.toLowerCase());
+    bolnaModels.forEach((model) => {
+      if (model.provider) {
+        providers.add(model.provider.toLowerCase());
+      } else if (model.family) {
+        // Fallback to family if provider is not available
+        providers.add(model.family.toLowerCase());
       }
     });
+    // Add common LLM providers if none found
+    if (providers.size === 0) {
+      return ['openai', 'anthropic', 'google', 'azure', 'cohere', 'mistral'];
+    }
     return Array.from(providers).sort();
-  }, [bolnaVoices]);
+  }, [bolnaModels]);
 
   const { data: bolnaModels = [], isLoading: loadingModels, refetch: refetchModels } = useQuery<BolnaModel[]>({
     queryKey: ['/api/bolna/models'],
@@ -803,7 +810,7 @@ export default function AIAgents() {
         agentFormSchema={agentFormSchema}
         models={bolnaModels}
         voices={bolnaVoices}
-        providers={availableProviders}
+        providers={availableLLMProviders}
         phoneNumbers={exotelPhoneNumbers.map(p => ({
           id: p.id,
           phoneNumber: p.phoneNumber,
