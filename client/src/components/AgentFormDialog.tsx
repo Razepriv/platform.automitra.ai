@@ -33,20 +33,23 @@ export interface AgentFormDialogProps {
   knowledgeBaseItems: { id: string; title: string }[];
 }
 
-export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
-  open,
-  onOpenChange,
-  initialValues,
-  onSubmit,
-  mode,
-  loading = false,
-  agentFormSchema,
-  models = [],
-  voices = [],
-  providers = [],
-  phoneNumbers = [],
-  knowledgeBaseItems = [],
-}) => {
+export const AgentFormDialog: React.FC<AgentFormDialogProps> = (props) => {
+  // Destructure props with defaults to avoid TDZ issues
+  const {
+    open,
+    onOpenChange,
+    initialValues,
+    onSubmit,
+    mode,
+    loading = false,
+    agentFormSchema,
+    models = [],
+    voices = [],
+    providers = [],
+    phoneNumbers = [],
+    knowledgeBaseItems = [],
+  } = props;
+  
   const [activeTab, setActiveTab] = useState("agent");
   
   // Initialize form with safe defaults - use useMemo to prevent re-initialization
