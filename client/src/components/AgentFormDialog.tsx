@@ -41,23 +41,24 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
   mode,
   loading = false,
   agentFormSchema,
-  models,
-  voices,
-  providers,
-  phoneNumbers,
-  knowledgeBaseItems,
+  models = [],
+  voices = [],
+  providers = [],
+  phoneNumbers = [],
+  knowledgeBaseItems = [],
 }) => {
   const [activeTab, setActiveTab] = useState("agent");
   
   // Initialize form with safe defaults - use useMemo to prevent re-initialization
   const defaultFormValues = useMemo(() => {
-    const safeModels = models || [];
+    const safeModels = Array.isArray(models) ? models : [];
+    const safeProviders = Array.isArray(providers) ? providers : [];
     return {
       name: "",
       description: "",
       model: safeModels[0]?.model || safeModels[0]?.name || "gpt-4",
       language: "en-US",
-      provider: "openai",
+      provider: safeProviders[0] || "openai",
       voiceProvider: "elevenlabs",
       voiceId: "",
       voiceName: "",
@@ -95,7 +96,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       inputProvider: "plivo",
       outputProvider: "plivo",
     };
-  }, [models]);
+  }, [models, providers]);
 
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentFormSchema),
@@ -109,7 +110,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
         // For edit mode: merge defaults with initial values, preserving all fields
         const editValues = {
           ...defaultFormValues,
-          ...initialValues,
+        ...initialValues,
           // Ensure arrays are properly set
           knowledgeBaseIds: Array.isArray(initialValues.knowledgeBaseIds) 
             ? initialValues.knowledgeBaseIds 
@@ -183,27 +184,27 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     <div>
                       <h3 className="text-lg font-semibold mb-4">Basic Information</h3>
                       <div className="space-y-4">
-                        <FormField
-                          control={form.control}
-                          name="name"
-                          render={({ field }) => (
-                            <FormItem>
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
                               <FormLabel className="text-sm font-medium">Agent Name *</FormLabel>
-                              <FormControl>
+                  <FormControl>
                                 <Input {...field} placeholder="e.g., Customer Support Agent" className="h-10" />
-                              </FormControl>
+                  </FormControl>
                               <FormDescription>
                                 The name of your voice AI agent
                               </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="description"
-                          render={({ field }) => (
-                            <FormItem>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
                               <FormLabel className="text-sm font-medium">Description</FormLabel>
                               <FormControl>
                                 <Textarea {...field} rows={2} placeholder="Brief description of the agent's purpose" />
@@ -389,39 +390,39 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             <FormItem>
                               <FormLabel className="text-sm font-medium">LLM Provider</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || providers[0] || ""}>
-                                <FormControl>
+                  <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select provider" />
                                   </SelectTrigger>
-                                </FormControl>
+                  </FormControl>
                                 <SelectContent>
-                                  {providers.map((p) => (
+                                  {Array.isArray(providers) && providers.map((p) => (
                                     <SelectItem key={p} value={p}>{p}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="model"
-                          render={({ field }) => (
-                            <FormItem>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="model"
+              render={({ field }) => (
+                <FormItem>
                               <FormLabel className="text-sm font-medium">Model</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || models[0]?.model || models[0]?.name || models[0]?.id || ""}>
-                                <FormControl>
+                  <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select model" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  {models.map((m) => (
-                                    <SelectItem key={m.id || m.name || m.model} value={m.model || m.name || m.id}>
-                                      {m.model || m.name || m.id} {m.description ? `- ${m.description}` : ''}
-                                    </SelectItem>
-                                  ))}
+                      {Array.isArray(models) && models.map((m) => (
+                        <SelectItem key={m.id || m.name || m.model} value={m.model || m.name || m.id}>
+                          {m.model || m.name || m.id} {m.description ? `- ${m.description}` : ''}
+                        </SelectItem>
+                      ))}
                                 </SelectContent>
                               </Select>
                               <FormMessage />
@@ -496,14 +497,14 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   className="h-10"
                                   placeholder="600"
                                 />
-                              </FormControl>
+                  </FormControl>
                               <FormDescription className="text-xs">
                                 Maximum call duration
                               </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
                       </div>
                     </div>
                   </div>
@@ -515,18 +516,18 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     <div>
                       <h3 className="text-lg font-semibold mb-4">Voice Configuration</h3>
                       <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
+            <FormField
+              control={form.control}
                           name="voiceProvider"
-                          render={({ field }) => (
-                            <FormItem>
+              render={({ field }) => (
+                <FormItem>
                               <FormLabel className="text-sm font-medium">Voice Provider *</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || "elevenlabs"}>
-                                <FormControl>
+                  <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select provider" />
                                   </SelectTrigger>
-                                </FormControl>
+                  </FormControl>
                                 <SelectContent>
                                   <SelectItem value="elevenlabs">ElevenLabs</SelectItem>
                                   <SelectItem value="polly">Polly</SelectItem>
@@ -537,29 +538,29 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               <FormDescription>
                                 Voice synthesis provider
                               </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="voiceId"
-                          render={({ field }) => (
-                            <FormItem>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="voiceId"
+              render={({ field }) => (
+                <FormItem>
                               <FormLabel className="text-sm font-medium">Voice *</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || ""}>
-                                <FormControl>
+                  <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select voice" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
                                   <SelectItem value="">Select Voice</SelectItem>
-                                  {voices.map((v) => (
-                                    <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id}>
-                                      {v.voice_name || v.name}
-                                    </SelectItem>
-                                  ))}
+                      {Array.isArray(voices) && voices.map((v) => (
+                        <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id}>
+                          {v.voice_name || v.name}
+                        </SelectItem>
+                      ))}
                                 </SelectContent>
                               </Select>
                               <FormDescription>
@@ -982,11 +983,11 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                       className="h-10"
                                       placeholder="5"
                                     />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
                           </div>
                         )}
                         <FormField
@@ -1017,25 +1018,25 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     <div>
                       <h3 className="text-lg font-semibold mb-4">Phone Number & Forwarding</h3>
                       <div className="space-y-4">
-                        <FormField
-                          control={form.control}
-                          name="assignedPhoneNumberId"
-                          render={({ field }) => (
-                            <FormItem>
+            <FormField
+              control={form.control}
+              name="assignedPhoneNumberId"
+              render={({ field }) => (
+                <FormItem>
                               <FormLabel className="text-sm font-medium">Phone Number</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || ""}>
-                                <FormControl>
+                  <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select phone number" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
                                   <SelectItem value="">No phone number</SelectItem>
-                                  {phoneNumbers.map((n) => (
-                                    <SelectItem key={n.id} value={n.id}>
-                                      {n.phoneNumber || n.number || n.id} {n.provider ? `(${n.provider})` : ''}
-                                    </SelectItem>
-                                  ))}
+                      {Array.isArray(phoneNumbers) && phoneNumbers.map((n) => (
+                        <SelectItem key={n.id} value={n.id}>
+                          {n.phoneNumber || n.number || n.id} {n.provider ? `(${n.provider})` : ''}
+                        </SelectItem>
+                      ))}
                                 </SelectContent>
                               </Select>
                               <FormDescription>
@@ -1074,14 +1075,14 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <FormLabel className="text-sm font-medium">Forwarding Number</FormLabel>
                                 <FormControl>
                                   <Input {...field} placeholder="+1234567890" className="h-10" />
-                                </FormControl>
+                  </FormControl>
                                 <FormDescription>
                                   Phone number to forward calls to (E.164 format)
                                 </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
                         )}
                       </div>
                     </div>
@@ -1090,13 +1091,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 
                     <div>
                       <h3 className="text-lg font-semibold mb-4">Knowledge Base</h3>
-                      <FormField
-                        control={form.control}
-                        name="knowledgeBaseIds"
-                        render={({ field }) => (
-                          <FormItem>
+            <FormField
+              control={form.control}
+              name="knowledgeBaseIds"
+              render={({ field }) => (
+                <FormItem>
                             <FormLabel className="text-sm font-medium">Knowledge Base</FormLabel>
-                            <FormControl>
+                  <FormControl>
                               <select 
                                 {...field} 
                                 multiple 
@@ -1107,11 +1108,11 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   field.onChange(selected);
                                 }}
                               >
-                                {knowledgeBaseItems.map((kb) => (
-                                  <option key={kb.id} value={kb.id}>{kb.title}</option>
-                                ))}
-                              </select>
-                            </FormControl>
+                      {Array.isArray(knowledgeBaseItems) && knowledgeBaseItems.map((kb) => (
+                        <option key={kb.id} value={kb.id}>{kb.title}</option>
+                      ))}
+                    </select>
+                  </FormControl>
                             <FormDescription>
                               Hold Ctrl/Cmd to select multiple knowledge base items
                             </FormDescription>
@@ -1149,39 +1150,39 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             <FormDescription>
                               Type of CRM ingestion source for inbound calls
                             </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
                     </div>
 
                     {form.watch("ingestSourceType") === "api" && (
                       <>
                         <Separator />
                         <div className="space-y-4">
-                          <FormField
-                            control={form.control}
+            <FormField
+              control={form.control}
                             name="ingestSourceUrl"
-                            render={({ field }) => (
-                              <FormItem>
+              render={({ field }) => (
+                <FormItem>
                                 <FormLabel className="text-sm font-medium">API URL *</FormLabel>
-                                <FormControl>
+                  <FormControl>
                                   <Input 
                                     {...field} 
                                     type="url"
                                     placeholder="https://example.com/api/data"
                                     className="h-10 font-mono text-sm"
                                   />
-                                </FormControl>
+                  </FormControl>
                                 <FormDescription>
                                   API endpoint URL for fetching data
                                 </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
                             name="ingestSourceAuthToken"
                             render={({ field }) => (
                               <FormItem>
@@ -1238,26 +1239,26 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           <FormField
                             control={form.control}
                             name="ingestSourceUrl"
-                            render={({ field }) => (
-                              <FormItem>
+              render={({ field }) => (
+                <FormItem>
                                 <FormLabel className="text-sm font-medium">Google Sheet URL *</FormLabel>
-                                <FormControl>
+                  <FormControl>
                                   <Input 
                                     {...field} 
                                     type="url"
                                     placeholder="https://docs.google.com/spreadsheets/d/..."
                                     className="h-10 font-mono text-sm"
                                   />
-                                </FormControl>
+                  </FormControl>
                                 <FormDescription>
                                   URL of the Google Sheet
                                 </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
                             name="ingestSourceName"
                             render={({ field }) => (
                               <FormItem>
@@ -1287,24 +1288,24 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       <FormField
                         control={form.control}
                         name="inboundLimit"
-                        render={({ field }) => (
-                          <FormItem>
+              render={({ field }) => (
+                <FormItem>
                             <FormLabel className="text-sm font-medium">Inbound Limit</FormLabel>
-                            <FormControl>
+                  <FormControl>
                               <Input 
                                 type="number" 
                                 {...field}
                                 className="h-10"
                                 placeholder="-1"
                               />
-                            </FormControl>
+                  </FormControl>
                             <FormDescription>
                               Number of times each phone number is allowed to call. Use -1 for unlimited.
                             </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
                     </div>
                   </div>
                 </TabsContent>
@@ -1327,7 +1328,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                   </>
                 ) : (
                   <>
-                    {mode === "edit" ? "Save Changes" : "Create Agent"}
+                {mode === "edit" ? "Save Changes" : "Create Agent"}
                   </>
                 )}
               </Button>
