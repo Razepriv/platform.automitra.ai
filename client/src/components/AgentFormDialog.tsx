@@ -263,7 +263,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel className="text-sm font-medium">Agent Type</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
+                                <Select onValueChange={field.onChange} value={field.value || "other"}>
                                   <FormControl>
                                     <SelectTrigger className="h-10">
                                       <SelectValue placeholder="Select agent type" />
@@ -290,7 +290,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel className="text-sm font-medium">Language</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
+                                <Select onValueChange={field.onChange} value={field.value || "en-US"}>
                                   <FormControl>
                                     <SelectTrigger className="h-10">
                                       <SelectValue placeholder="Select language" />
@@ -429,7 +429,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">LLM Provider</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || providers[0] || ""}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select provider" />
@@ -451,7 +451,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">Model</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || models[0]?.model || models[0]?.name || models[0]?.id || ""}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select model" />
@@ -562,7 +562,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">Voice Provider *</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || "elevenlabs"}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select provider" />
@@ -588,7 +588,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">Voice *</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || ""}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select voice" />
@@ -645,7 +645,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">Audio Format</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || "wav"}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select format" />
@@ -679,7 +679,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">Provider</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || "deepgram"}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select provider" />
@@ -931,7 +931,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel className="text-sm font-medium">Ambient Noise Track</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value}>
+                                <Select onValueChange={field.onChange} value={field.value || "office-ambience"}>
                                   <FormControl>
                                     <SelectTrigger className="h-10">
                                       <SelectValue placeholder="Select track" />
@@ -1064,7 +1064,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel className="text-sm font-medium">Phone Number</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || ""}>
                                 <FormControl>
                                   <SelectTrigger className="h-10">
                                     <SelectValue placeholder="Select phone number" />
@@ -1175,7 +1175,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="text-sm font-medium">Source Type</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={field.onChange} value={field.value || "api"}>
                               <FormControl>
                                 <SelectTrigger className="h-10">
                                   <SelectValue placeholder="Select source type" />
