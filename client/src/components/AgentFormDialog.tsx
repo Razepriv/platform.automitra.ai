@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
-// AgentFormValues is now provided by the parent (AIAgents.tsx) via props, so we use 'any' for generic typing here
+// AgentFormValues is defined by the parent component (AIAgents.tsx)
 type AgentFormValues = any;
 
 interface AgentFormDialogProps {
