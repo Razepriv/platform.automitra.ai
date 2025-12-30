@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 // AgentFormValues is defined by the parent component (AIAgents.tsx)
 type AgentFormValues = any;
 
-interface AgentFormDialogProps {
+export interface AgentFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialValues?: Partial<AgentFormValues>;
@@ -49,12 +49,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState("agent");
   
-  const form = useForm<AgentFormValues>({
-    resolver: zodResolver(agentFormSchema),
-    defaultValues: {
+  // Initialize form with safe defaults - use useMemo to prevent re-initialization
+  const defaultFormValues = useMemo(() => {
+    const safeModels = models || [];
+    return {
       name: "",
       description: "",
-      model: models[0]?.model || models[0]?.name || "gpt-4",
+      model: safeModels[0]?.model || safeModels[0]?.name || "gpt-4",
       language: "en-US",
       provider: "openai",
       voiceProvider: "elevenlabs",
@@ -93,79 +94,37 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       ingestSourceName: "",
       inputProvider: "plivo",
       outputProvider: "plivo",
-    },
+    };
+  }, [models]);
+
+  const form = useForm<AgentFormValues>({
+    resolver: zodResolver(agentFormSchema),
+    defaultValues: defaultFormValues,
   });
 
   useEffect(() => {
     if (open) {
-      // Use the same default values structure for both create and edit
-      const defaults = {
-        name: "",
-        description: "",
-        model: models?.[0]?.model || models?.[0]?.name || "gpt-4",
-        language: "en-US",
-        provider: "openai",
-        voiceProvider: "elevenlabs",
-        voiceId: "",
-        voiceName: "",
-        temperature: 0.7,
-        maxDuration: 600,
-        maxTokens: 150,
-        systemPrompt: "",
-        userPrompt: "",
-        firstMessage: "",
-        knowledgeBaseIds: [],
-        assignedPhoneNumberId: "",
-        callForwardingEnabled: false,
-        callForwardingNumber: "",
-        status: "active",
-        webhookUrl: "",
-        agentType: "other",
-        // Conversation Config defaults
-        hangupAfterSilence: 10,
-        incrementalDelay: 400,
-        numberOfWordsForInterruption: 2,
-        hangupAfterLLMCall: false,
-        callCancellationPrompt: "",
-        backchanneling: false,
-        backchannelingMessageGap: 5,
-        backchannelingStartDelay: 5,
-        ambientNoise: false,
-        ambientNoiseTrack: "office-ambience",
-        callTerminate: 90,
-        voicemail: false,
-        disallowUnknownNumbers: false,
-        inboundLimit: -1,
-        // Ingest Source Config
-        ingestSourceType: "api",
-        ingestSourceUrl: "",
-        ingestSourceAuthToken: "",
-        ingestSourceName: "",
-        // Input/Output
-        inputProvider: "plivo",
-        outputProvider: "plivo",
-      };
-
+      // Use the memoized defaultFormValues as base
       if (initialValues) {
         // For edit mode: merge defaults with initial values, preserving all fields
         const editValues = {
-          ...defaults,
+          ...defaultFormValues,
           ...initialValues,
           // Ensure arrays are properly set
           knowledgeBaseIds: Array.isArray(initialValues.knowledgeBaseIds) 
             ? initialValues.knowledgeBaseIds 
             : (initialValues.knowledgeBaseIds ? [initialValues.knowledgeBaseIds] : []),
           // Ensure all fields from defaults are present
-          temperature: initialValues.temperature ?? defaults.temperature,
-          maxDuration: initialValues.maxDuration ?? defaults.maxDuration,
-          maxTokens: initialValues.maxTokens ?? defaults.maxTokens,
-          callForwardingEnabled: initialValues.callForwardingEnabled ?? defaults.callForwardingEnabled,
-          status: initialValues.status ?? defaults.status,
+          temperature: initialValues.temperature ?? defaultFormValues.temperature,
+          maxDuration: initialValues.maxDuration ?? defaultFormValues.maxDuration,
+          maxTokens: initialValues.maxTokens ?? defaultFormValues.maxTokens,
+          callForwardingEnabled: initialValues.callForwardingEnabled ?? defaultFormValues.callForwardingEnabled,
+          status: initialValues.status ?? defaultFormValues.status,
         };
         form.reset(editValues);
       } else {
         // For create mode: use defaults
-        form.reset(defaults);
+        form.reset(defaultFormValues);
       }
       setActiveTab("agent"); // Reset to first tab when dialog opens
     }
