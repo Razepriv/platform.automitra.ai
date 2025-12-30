@@ -54,11 +54,46 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
     defaultValues: {
       name: "",
       description: "",
-      model: models[0]?.name || "gpt-4",
+      model: models[0]?.model || models[0]?.name || "gpt-4",
       language: "en-US",
-      ...initialValues,
+      provider: "openai",
+      voiceProvider: "elevenlabs",
+      voiceId: "",
+      voiceName: "",
+      temperature: 0.7,
+      maxDuration: 600,
+      maxTokens: 150,
+      systemPrompt: "",
+      userPrompt: "",
+      firstMessage: "",
+      knowledgeBaseIds: [],
+      assignedPhoneNumberId: "",
+      callForwardingEnabled: false,
+      callForwardingNumber: "",
+      status: "active",
+      webhookUrl: "",
+      agentType: "other",
+      hangupAfterSilence: 10,
+      incrementalDelay: 400,
+      numberOfWordsForInterruption: 2,
+      hangupAfterLLMCall: false,
+      callCancellationPrompt: "",
+      backchanneling: false,
+      backchannelingMessageGap: 5,
+      backchannelingStartDelay: 5,
+      ambientNoise: false,
+      ambientNoiseTrack: "office-ambience",
+      callTerminate: 90,
+      voicemail: false,
+      disallowUnknownNumbers: false,
+      inboundLimit: -1,
+      ingestSourceType: "api",
+      ingestSourceUrl: "",
+      ingestSourceAuthToken: "",
+      ingestSourceName: "",
+      inputProvider: "plivo",
+      outputProvider: "plivo",
     },
-    values: initialValues,
   });
 
   useEffect(() => {
@@ -67,7 +102,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       const defaults = {
         name: "",
         description: "",
-        model: models[0]?.model || models[0]?.name || "gpt-4",
+        model: models?.[0]?.model || models?.[0]?.name || "gpt-4",
         language: "en-US",
         provider: "openai",
         voiceProvider: "elevenlabs",
@@ -134,8 +169,8 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       }
       setActiveTab("agent"); // Reset to first tab when dialog opens
     }
-    // eslint-disable-next-line
-  }, [open, initialValues, models]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialValues]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
