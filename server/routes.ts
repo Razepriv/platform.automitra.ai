@@ -296,8 +296,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (agent.bolnaAgentId) {
         try {
           await bolnaClient.deleteAgent(agent.bolnaAgentId);
-        } catch (bolnaError) {
-          console.error("Bolna API delete error:", bolnaError);
+        } catch (bolnaError: any) {
+          // Handle 404 gracefully (agent already deleted or never existed in Bolna)
+          if (bolnaError?.message?.includes('404') || bolnaError?.message?.includes('not found')) {
+            console.log(`[Agent Delete] Bolna agent ${agent.bolnaAgentId} not found (already deleted or never synced), continuing with local deletion`);
+          } else {
+            console.error("Bolna API delete error:", bolnaError);
+          }
           // Continue with local deletion even if Bolna deletion fails
         }
       }
@@ -2682,26 +2687,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (sessionId) {
         // Try to get user from session
-        const pgStore = require('connect-pg-simple')(require('express-session'));
-        const store = new pgStore({
-          conString: process.env.DATABASE_URL,
-          tableName: "sessions",
-        });
-        
-        const session = await new Promise<any>((resolve, reject) => {
-          store.get(sessionId, (err: any, sess: any) => {
-            if (err) reject(err);
-            else resolve(sess);
+        // Use dynamic import for ESM compatibility
+        try {
+          const connectPg = (await import('connect-pg-simple')).default;
+          const expressSession = (await import('express-session')).default;
+          const pgStore = connectPg(expressSession);
+          const store = new pgStore({
+            conString: process.env.DATABASE_URL,
+            tableName: "sessions",
           });
-        });
-        
-        if (session?.user?.claims?.sub) {
-          const user = await storage.getUser(session.user.claims.sub);
-          if (user) {
-            userOrganizationId = user.organizationId;
-            (socket as any).organizationId = userOrganizationId;
-            (socket as any).userId = user.id;
+          
+          const session = await new Promise<any>((resolve, reject) => {
+            store.get(sessionId, (err: any, sess: any) => {
+              if (err) reject(err);
+              else resolve(sess);
+            });
+          });
+          
+          if (session?.user?.claims?.sub) {
+            const user = await storage.getUser(session.user.claims.sub);
+            if (user) {
+              userOrganizationId = user.organizationId;
+              (socket as any).organizationId = userOrganizationId;
+              (socket as any).userId = user.id;
+            }
           }
+        } catch (importError) {
+          // If dynamic import fails, skip session verification
+          console.warn(`[Socket.IO] Could not import session store for socket ${socket.id}:`, importError);
         }
       }
     } catch (error) {

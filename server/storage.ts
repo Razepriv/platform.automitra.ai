@@ -397,9 +397,18 @@ export class DatabaseStorage implements IStorage {
   async getVisitsByManager(managerId: string, organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
   async createVisit(visit: InsertVisit): Promise<Visit> { throw new Error('Not implemented'); }
   async updateVisit(id: string, organizationId: string, visit: Partial<InsertVisit>): Promise<Visit | undefined> { throw new Error('Not implemented'); }
-  async getKnowledgeBase(organizationId: string): Promise<KnowledgeBase[]> { throw new Error('Not implemented'); }
-  async getKnowledgeBaseByAgent(agentId: string, organizationId: string): Promise<KnowledgeBase[]> { throw new Error('Not implemented'); }
-  async getKnowledgeBaseItem(id: string, organizationId: string): Promise<KnowledgeBase | undefined> { throw new Error('Not implemented'); }
+  async getKnowledgeBase(organizationId: string): Promise<KnowledgeBase[]> {
+    return await db.select().from(knowledgeBase).where(eq(knowledgeBase.organizationId, organizationId));
+  }
+  async getKnowledgeBaseByAgent(agentId: string, organizationId: string): Promise<KnowledgeBase[]> {
+    return await db.select().from(knowledgeBase)
+      .where(and(eq(knowledgeBase.agentId, agentId), eq(knowledgeBase.organizationId, organizationId)));
+  }
+  async getKnowledgeBaseItem(id: string, organizationId: string): Promise<KnowledgeBase | undefined> {
+    const [kb] = await db.select().from(knowledgeBase)
+      .where(and(eq(knowledgeBase.id, id), eq(knowledgeBase.organizationId, organizationId)));
+    return kb || undefined;
+  }
   async createKnowledgeBase(knowledge: InsertKnowledgeBase): Promise<KnowledgeBase> { throw new Error('Not implemented'); }
   async updateKnowledgeBase(id: string, organizationId: string, knowledge: UpdateKnowledgeBaseInput): Promise<KnowledgeBase | undefined> { throw new Error('Not implemented'); }
   async deleteKnowledgeBase(id: string, organizationId: string): Promise<boolean> { throw new Error('Not implemented'); }
