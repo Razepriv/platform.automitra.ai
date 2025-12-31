@@ -3146,13 +3146,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   return httpServer;
 }
-
-      console.error("Error fetching organization:", error);
-      res.status(500).json({ message: "Failed to fetch organization" });
-    }
-  });
-
-  app.patch('/api/organization/whitelabel', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);

@@ -363,10 +363,7 @@ export class DatabaseStorage implements IStorage {
   // AI Agent operations
   async getAIAgents(organizationId: string): Promise<AiAgent[]> {
     // CRITICAL: Filter by organizationId for multi-tenant isolation
-<<<<<<< HEAD
     // Each user can only see agents from their own organization
-=======
->>>>>>> 0d2d722d0eb32cf43c2e964cada2db96ba795b33
     return await db.select().from(aiAgents)
       .where(eq(aiAgents.organizationId, organizationId))
       .orderBy(desc(aiAgents.createdAt));
