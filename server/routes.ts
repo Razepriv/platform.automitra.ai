@@ -3146,32 +3146,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   return httpServer;
 }
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      const { companyName, logoUrl, primaryColor } = req.body;
-      const organization = await storage.updateOrganizationWhitelabel(
-        user.organizationId,
-        { companyName, logoUrl, primaryColor }
-      );
-
-      // Emit real-time update
-      if ((app as any).emitOrganizationUpdate && organization) {
-        (app as any).emitOrganizationUpdate(user.organizationId, organization);
-      }
-
-      res.json(organization);
-    } catch (error) {
-      console.error("Error updating organization whitelabel:", error);
-      res.status(500).json({ message: "Failed to update organization whitelabel" });
-    }
-  });
-
-  const httpServer = createServer(app);
 
   // WebSocket setup for real-time updates
   const io = new SocketIOServer(httpServer, {
