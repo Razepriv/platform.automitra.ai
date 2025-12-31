@@ -97,6 +97,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User settings routes
+  app.patch('/api/user/profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { firstName, lastName } = req.body;
+      
+      const user = await storage.updateUserProfile(userId, { firstName, lastName });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Emit real-time update
+      if ((app as any).emitUserUpdate) {
+        (app as any).emitUserUpdate(user.organizationId, user);
+      }
+
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      res.status(500).json({ message: "Failed to update user profile" });
+    }
+  });
+
+  app.post('/api/user/notifications/email', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { enabled } = req.body;
+      
+      const user = await storage.updateUserPreferences(userId, { emailNotificationsEnabled: enabled !== false });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating email notifications:", error);
+      res.status(500).json({ message: "Failed to update email notifications" });
+    }
+  });
+
+  app.post('/api/user/notifications/call-alerts', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { enabled } = req.body;
+      
+      const user = await storage.updateUserPreferences(userId, { callAlertsEnabled: enabled !== false });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating call alerts:", error);
+      res.status(500).json({ message: "Failed to update call alerts" });
+    }
+  });
+
+  app.post('/api/user/notifications/daily-summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { enabled } = req.body;
+      
+      const user = await storage.updateUserPreferences(userId, { dailySummaryEnabled: enabled !== false });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating daily summary:", error);
+      res.status(500).json({ message: "Failed to update daily summary" });
+    }
+  });
+
+  app.post('/api/user/enable-2fa', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Generate a 2FA secret (in production, use a proper library like speakeasy)
+      const crypto = await import('crypto');
+      const secret = crypto.randomBytes(32).toString('base64');
+      
+      const user = await storage.updateUser2FA(userId, true, secret);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({ enabled: true, secret });
+    } catch (error) {
+      console.error("Error enabling 2FA:", error);
+      res.status(500).json({ message: "Failed to enable 2FA" });
+    }
+  });
+
   // AI Agents routes
   app.get('/api/ai-agents', isAuthenticated, async (req: any, res) => {
     try {
