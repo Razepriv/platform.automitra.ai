@@ -152,7 +152,7 @@ export default function CallHistory() {
       return res.json();
     },
     enabled: !!user,
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchInterval: 10000, // Auto-refresh every 10 seconds to catch new calls faster
   });
 
   // Real-time call updates via WebSocket
@@ -176,11 +176,13 @@ export default function CallHistory() {
       }
       return [newCall, ...oldData];
     });
+    // Also invalidate to ensure we get the latest data from server
+    queryClient.invalidateQueries({ queryKey: ['/api/calls', user?.id] });
     toast({
       title: "New call initiated",
       description: `Call to ${newCall.contactName || newCall.contactPhone} has been started.`,
     });
-  }, [toast]));
+  }, [toast, user?.id]));
 
   useWebSocketEvent<Call>('call:updated', useCallback((updatedCall: Call) => {
     console.log('[CallHistory] Received call:updated', updatedCall);
@@ -189,6 +191,8 @@ export default function CallHistory() {
         call.id === updatedCall.id ? updatedCall : call
       );
     });
+    // Also invalidate to ensure we get the latest data from server
+    queryClient.invalidateQueries({ queryKey: ['/api/calls', user?.id] });
 
     // Update selected call if it's the one being viewed
     setSelectedCall(current =>
@@ -231,8 +235,10 @@ export default function CallHistory() {
       const response = await apiRequest("POST", "/api/calls/initiate", data);
       return response;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calls", user?.id] });
+    onSuccess: async () => {
+      // Invalidate and refetch to ensure we get the new call immediately
+      await queryClient.invalidateQueries({ queryKey: ["/api/calls", user?.id] });
+      await refetchCalls();
       toast({
         title: "Call initiated",
         description: "Your call has been successfully initiated.",
