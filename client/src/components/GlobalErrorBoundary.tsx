@@ -1,16 +1,21 @@
 import React from "react";
 
-export class GlobalErrorBoundary extends React.Component {
-  constructor(props) {
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class GlobalErrorBoundary extends React.Component<React.PropsWithChildren<{}>, ErrorBoundaryState> {
+  constructor(props: React.PropsWithChildren<{}>) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error, errorInfo) {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     // Log error to monitoring service if needed
     console.error("Global error boundary caught:", error, errorInfo);
   }

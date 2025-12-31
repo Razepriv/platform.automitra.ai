@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-export default function BulkContactsForm({ onAdd }) {
+export default function BulkContactsForm({ onAdd }: { onAdd: (contacts: string[]) => void }) {
   const [bulkInput, setBulkInput] = useState("");
   const [error, setError] = useState("");
 

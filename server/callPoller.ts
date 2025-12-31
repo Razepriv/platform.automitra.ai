@@ -33,7 +33,7 @@ export function startCallPolling(
   }
 
   console.log(`🔄 [Poll] Starting status polling for call ${bolnaCallId}`);
-  
+
   pollStatuses.set(bolnaCallId, {
     attempts: 0,
     startTime: Date.now(),
@@ -84,12 +84,12 @@ async function pollCallStatus(
 
     // Fetch details from Bolna
     console.log(`🔍 [Poll] Attempt ${pollStatus.attempts}/${MAX_POLL_ATTEMPTS} for ${bolnaCallId}`);
-    
+
     const bolnaDetails = await bolnaClient.getCallDetails(bolnaCallId);
-    
+
     if (!bolnaDetails || Object.keys(bolnaDetails).length === 0) {
       console.log(`[Poll] No details yet for ${bolnaCallId}`);
-      
+
       // Stop if exceeded max attempts
       if (pollStatus.attempts >= MAX_POLL_ATTEMPTS) {
         console.log(`⏱️ [Poll] Max attempts reached for ${bolnaCallId}, stopping`);
@@ -163,7 +163,7 @@ async function pollCallStatus(
 
   } catch (error: any) {
     console.error(`❌ [Poll] Error polling ${bolnaCallId}:`, error.message);
-    
+
     // Stop polling on persistent errors after multiple attempts
     if (pollStatus.attempts >= 5) {
       console.log(`[Poll] Stopping due to repeated errors for ${bolnaCallId}`);
@@ -184,7 +184,7 @@ export function stopCallPolling(bolnaCallId: string) {
 
 export function stopAllPolling() {
   console.log(`🛑 [Poll] Stopping all active polls (${activePolls.size} active)`);
-  for (const [bolnaCallId, interval] of activePolls.entries()) {
+  for (const [bolnaCallId, interval] of Array.from(activePolls.entries())) {
     clearInterval(interval);
     activePolls.delete(bolnaCallId);
     pollStatuses.delete(bolnaCallId);

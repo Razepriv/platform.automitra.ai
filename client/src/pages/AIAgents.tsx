@@ -4,6 +4,8 @@ import { AgentFormDialog } from "@/components/AgentFormDialog";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Bot, Phone, Plus, Settings, Zap, Loader2, BookOpen, Mic, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -39,7 +41,7 @@ const agentFormSchema = createAiAgentSchema.extend({
   // Advanced Bolna Config Fields
   webhookUrl: z.string().optional(),
   agentType: z.string().default("other"),
-  
+
   // Transcriber
   transcriberProvider: z.string().default("deepgram"),
   transcriberModel: z.string().default("nova-2"),
@@ -48,12 +50,12 @@ const agentFormSchema = createAiAgentSchema.extend({
   transcriberSamplingRate: z.coerce.number().default(16000),
   transcriberEncoding: z.string().default("linear16"),
   transcriberEndpointing: z.coerce.number().default(100),
-  
+
   // Synthesizer (extra)
   synthesizerStream: z.boolean().default(true),
   synthesizerBufferSize: z.coerce.number().default(150),
   synthesizerAudioFormat: z.string().default("wav"),
-  
+
   // Task Config
   hangupAfterSilence: z.coerce.number().default(10),
   incrementalDelay: z.coerce.number().default(400),
@@ -68,7 +70,7 @@ const agentFormSchema = createAiAgentSchema.extend({
   callTerminate: z.coerce.number().default(90),
   voicemail: z.boolean().default(false),
   disallowUnknownNumbers: z.boolean().default(false),
-  
+
   // Ingest Source Config
   ingestSourceType: z.string().default("api"),
   ingestSourceUrl: z.string().optional(),
@@ -103,7 +105,7 @@ type AgentFormValues = z.infer<typeof agentFormSchema>;
 
 export default function AIAgents() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState<"create"|"edit">("create");
+  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [formInitialValues, setFormInitialValues] = useState<Partial<AgentFormValues> | undefined>(undefined);
   const [selectedAgent, setSelectedAgent] = useState<AiAgent | null>(null);
   const { toast } = useToast();
@@ -116,8 +118,8 @@ export default function AIAgents() {
       setFormInitialValues(undefined);
       setIsDialogOpen(true);
       params.delete('action');
-      const newUrl = params.toString() ? 
-        `${window.location.pathname}?${params.toString()}` : 
+      const newUrl = params.toString() ?
+        `${window.location.pathname}?${params.toString()}` :
         window.location.pathname;
       window.history.replaceState(null, '', newUrl);
     }
@@ -145,6 +147,11 @@ export default function AIAgents() {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
   }, []));
 
+  // Test Call State
+  const [isTestCallOpen, setIsTestCallOpen] = useState(false);
+  const [testCallAgent, setTestCallAgent] = useState<AiAgent | null>(null);
+  const [recipientPhone, setRecipientPhone] = useState("");
+
   // Real-time phone number updates
   useWebSocketEvent('phone:created', useCallback(() => {
     console.log('[AIAgents] Received phone:created event');
@@ -164,13 +171,19 @@ export default function AIAgents() {
     queryKey: ['/api/bolna/voices', voiceProviderFilter],
     enabled: isDialogOpen,
     queryFn: async () => {
-      const url = voiceProviderFilter === 'all' 
+      const url = voiceProviderFilter === 'all'
         ? '/api/bolna/voices'
         : `/api/bolna/voices?provider=${voiceProviderFilter}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch voices');
       return response.json();
     },
+  });
+
+  const { data: bolnaModels = [], isLoading: loadingModels, refetch: refetchModels } = useQuery<BolnaModel[]>({
+    queryKey: ['/api/bolna/models'],
+    enabled: true, // Always enabled to fetch models
+    staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
   });
 
   // Get unique LLM providers from models (not voice providers)
@@ -188,14 +201,8 @@ export default function AIAgents() {
     if (providers.size === 0) {
       return ['openai', 'anthropic', 'google', 'azure', 'cohere', 'mistral'];
     }
-    return Array.from(providers).sort();
+    return (Array.from(providers) as string[]).sort();
   }, [bolnaModels]);
-
-  const { data: bolnaModels = [], isLoading: loadingModels, refetch: refetchModels } = useQuery<BolnaModel[]>({
-    queryKey: ['/api/bolna/models'],
-    enabled: true, // Always enabled to fetch models
-    staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
-  });
 
   // Fetch Exotel phone numbers
   const { data: exotelPhoneNumbers = [], isLoading: loadingPhoneNumbers, refetch: refetchPhoneNumbers } = useQuery<PhoneNumber[]>({
@@ -230,7 +237,27 @@ export default function AIAgents() {
   // Handler to open dialog for edit
   const handleOpenEdit = (agent: AiAgent) => {
     setDialogMode("edit");
-    setFormInitialValues(agent);
+    const sanitizedAgent = {
+      ...agent,
+      agentType: agent.agentType || undefined,
+      description: agent.description || undefined,
+      voiceId: agent.voiceId || undefined,
+      voiceName: agent.voiceName || undefined,
+      systemPrompt: agent.systemPrompt || undefined,
+      userPrompt: agent.userPrompt || undefined,
+      firstMessage: agent.firstMessage || undefined,
+      provider: agent.provider || undefined,
+      voiceProvider: agent.voiceProvider || undefined,
+      bolnaAgentId: agent.bolnaAgentId || undefined,
+      bolnaConfig: agent.bolnaConfig || undefined,
+      knowledgeBaseIds: agent.knowledgeBaseIds || [],
+      assignedPhoneNumberId: agent.assignedPhoneNumberId || undefined,
+      callForwardingNumber: agent.callForwardingNumber || undefined,
+      temperature: agent.temperature || undefined,
+      maxDuration: agent.maxDuration || undefined,
+      maxTokens: agent.maxTokens || undefined,
+    };
+    setFormInitialValues(sanitizedAgent);
     setSelectedAgent(agent);
     setIsDialogOpen(true);
   };
@@ -245,6 +272,10 @@ export default function AIAgents() {
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
+      console.log("[Create Agent] ===== STARTING CREATE MUTATION =====");
+      console.log("[Create Agent] Starting create mutation", { data });
+      console.log("[Create Agent] Data keys:", Object.keys(data));
+      
       // Build payload - only include defined fields from schema
       const payload: any = {
         name: data.name,
@@ -258,7 +289,7 @@ export default function AIAgents() {
         status: data.status ?? "active",
         callForwardingEnabled: data.callForwardingEnabled ?? false,
       };
-      
+
       // Only add optional fields if they have values
       if (data.description) payload.description = data.description;
       if (data.voiceId) payload.voiceId = data.voiceId;
@@ -269,7 +300,10 @@ export default function AIAgents() {
       if (data.knowledgeBaseIds && data.knowledgeBaseIds.length > 0) {
         payload.knowledgeBaseIds = data.knowledgeBaseIds;
       }
-      if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
+      // Handle phone number - filter out "none" value
+      if (data.assignedPhoneNumberId && data.assignedPhoneNumberId !== "none") {
+        payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
+      }
       if (data.callForwardingNumber) payload.callForwardingNumber = data.callForwardingNumber;
 
       // Construct Bolna Config
@@ -296,10 +330,19 @@ export default function AIAgents() {
               },
               synthesizer: {
                 provider: data.voiceProvider,
-                provider_config: {
-                  voice: data.voiceId,
-                  language: data.language
-                },
+                provider_config: (() => {
+                  const baseConfig: any = {
+                    voice: data.voiceId,
+                    language: data.language
+                  };
+                  // ElevenLabs requires both voice and voice_id
+                  if (data.voiceProvider === "elevenlabs" || data.voiceProvider === "ElevenLabs") {
+                    baseConfig.voice_id = data.voiceId;
+                    baseConfig.model = "eleven_turbo_v2_5";
+                    baseConfig.sampling_rate = "16000";
+                  }
+                  return baseConfig;
+                })(),
                 stream: data.synthesizerStream,
                 buffer_size: data.synthesizerBufferSize,
                 audio_format: data.synthesizerAudioFormat
@@ -338,13 +381,32 @@ export default function AIAgents() {
           } : undefined
         }
       };
-      
+
       payload.bolnaConfig = bolnaConfig;
-      
-      const res = await apiRequest('POST', '/api/ai-agents', payload);
-      return res.json();
+
+      console.log("[Create Agent] Sending payload", payload);
+      try {
+        const res = await apiRequest('POST', '/api/ai-agents', payload);
+        const result = await res.json();
+        console.log("[Create Agent] Create successful", result);
+        return result;
+      } catch (error: any) {
+        console.error("[Create Agent] Create failed", error);
+        // Extract more detailed error message
+        let errorMessage = error.message || "Failed to create AI agent";
+        if (error.response) {
+          try {
+            const errorData = await error.response.json();
+            errorMessage = errorData.message || errorData.error || errorMessage;
+          } catch {
+            errorMessage = error.response.statusText || errorMessage;
+          }
+        }
+        throw new Error(errorMessage);
+      }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("[Create Agent] onSuccess called", data);
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
       setIsDialogOpen(false);
       setFormInitialValues(undefined);
@@ -354,6 +416,7 @@ export default function AIAgents() {
       });
     },
     onError: (error: Error) => {
+      console.error("[Create Agent] onError called", error);
       toast({
         title: "Error",
         description: error.message || "Failed to create AI agent",
@@ -365,7 +428,8 @@ export default function AIAgents() {
   const updateMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
       if (!selectedAgent) throw new Error("No agent selected");
-      
+      console.log("[Update Agent] Starting update mutation", { agentId: selectedAgent.id, data });
+
       // Build payload - only include defined fields from schema
       // Preserve existing values if not provided in update
       const payload: any = {
@@ -380,28 +444,103 @@ export default function AIAgents() {
         status: data.status || selectedAgent.status || "active",
         callForwardingEnabled: data.callForwardingEnabled !== undefined ? data.callForwardingEnabled : (selectedAgent.callForwardingEnabled ?? false),
       };
-      
-      // Only add optional fields if they have values or preserve existing
-      if (data.description !== undefined) payload.description = data.description;
-      if (data.voiceId !== undefined) payload.voiceId = data.voiceId;
-      else if (selectedAgent.voiceId) payload.voiceId = selectedAgent.voiceId; // Preserve existing voiceId
-      if (data.voiceName !== undefined) payload.voiceName = data.voiceName;
-      if (data.systemPrompt !== undefined) payload.systemPrompt = data.systemPrompt;
-      if (data.userPrompt !== undefined) payload.userPrompt = data.userPrompt;
-      if (data.firstMessage !== undefined) payload.firstMessage = data.firstMessage;
-      if (data.knowledgeBaseIds !== undefined) {
-        payload.knowledgeBaseIds = data.knowledgeBaseIds;
-      }
-      if (data.assignedPhoneNumberId) payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
-      if (data.callForwardingNumber) payload.callForwardingNumber = data.callForwardingNumber;
 
-      // Construct Bolna Config
+      // Only add optional fields if they have values or preserve existing
+      // Convert empty strings to undefined for optional fields
+      if (data.description !== undefined && data.description !== "") {
+        payload.description = data.description;
+      } else if (data.description === "") {
+        payload.description = undefined; // Clear description if empty string
+      }
+      
+      // Handle voiceId and voiceName together
+      if (data.voiceId !== undefined && data.voiceId !== "") {
+        payload.voiceId = data.voiceId;
+        // Always set voiceName when voiceId is set
+        if (data.voiceName !== undefined && data.voiceName !== "") {
+          payload.voiceName = data.voiceName;
+        } else {
+          // Try to find voiceName from the voices list if not provided
+          // This is a fallback in case the form didn't set it
+          payload.voiceName = data.voiceName || undefined;
+        }
+      } else if (selectedAgent.voiceId && (data.voiceId === undefined || data.voiceId === "")) {
+        // Preserve existing voiceId and voiceName if not changed
+        payload.voiceId = selectedAgent.voiceId;
+        if (selectedAgent.voiceName) {
+          payload.voiceName = selectedAgent.voiceName;
+        }
+      } else if (data.voiceId === "") {
+        // Clear voiceId and voiceName if empty string
+        payload.voiceId = undefined;
+        payload.voiceName = undefined;
+      }
+      
+      // If voiceName is set separately but voiceId wasn't, ensure voiceName is included
+      if (data.voiceName !== undefined && data.voiceName !== "" && !payload.voiceName) {
+        payload.voiceName = data.voiceName;
+      }
+      
+      if (data.systemPrompt !== undefined && data.systemPrompt !== "") {
+        payload.systemPrompt = data.systemPrompt;
+      } else if (data.systemPrompt === "") {
+        payload.systemPrompt = undefined;
+      }
+      
+      if (data.userPrompt !== undefined && data.userPrompt !== "") {
+        payload.userPrompt = data.userPrompt;
+      } else if (data.userPrompt === "") {
+        payload.userPrompt = undefined;
+      }
+      
+      if (data.firstMessage !== undefined && data.firstMessage !== "") {
+        payload.firstMessage = data.firstMessage;
+      } else if (selectedAgent.firstMessage && (data.firstMessage === undefined || data.firstMessage === "")) {
+        payload.firstMessage = selectedAgent.firstMessage;
+      } else if (data.firstMessage === "") {
+        payload.firstMessage = undefined;
+      }
+      
+      if (data.knowledgeBaseIds !== undefined) {
+        payload.knowledgeBaseIds = Array.isArray(data.knowledgeBaseIds) && data.knowledgeBaseIds.length > 0 
+          ? data.knowledgeBaseIds 
+          : undefined;
+      }
+      
+      // Handle phone number - filter out "none" value and empty strings
+      if (data.assignedPhoneNumberId && data.assignedPhoneNumberId !== "none" && data.assignedPhoneNumberId !== "") {
+        payload.assignedPhoneNumberId = data.assignedPhoneNumberId;
+      } else {
+        // Explicitly set to undefined to clear the assignment
+        payload.assignedPhoneNumberId = undefined;
+      }
+      
+      if (data.callForwardingNumber && data.callForwardingNumber !== "") {
+        payload.callForwardingNumber = data.callForwardingNumber;
+      } else if (data.callForwardingNumber === "") {
+        payload.callForwardingNumber = undefined;
+      }
+
+      // Use merged values for bolnaConfig to ensure all fields are defined
+      const mergedName = payload.name;
+      const mergedFirstMessage = payload.firstMessage || selectedAgent.firstMessage || "";
+      const mergedWebhookUrl = data.webhookUrl || (selectedAgent.bolnaConfig as any)?.agent_config?.webhook_url;
+      const mergedAgentType = data.agentType || (selectedAgent.bolnaConfig as any)?.agent_config?.agent_type || "other";
+      const mergedProvider = payload.provider;
+      const mergedModel = payload.model;
+      const mergedMaxTokens = payload.maxTokens;
+      const mergedTemperature = payload.temperature;
+      const mergedVoiceProvider = payload.voiceProvider;
+      const mergedVoiceId = payload.voiceId;
+      const mergedLanguage = payload.language;
+
+      // Construct Bolna Config using merged values
       const bolnaConfig = {
         agent_config: {
-          agent_name: data.name,
-          agent_welcome_message: data.firstMessage,
-          webhook_url: data.webhookUrl,
-          agent_type: data.agentType,
+          agent_name: mergedName,
+          agent_welcome_message: mergedFirstMessage,
+          webhook_url: mergedWebhookUrl,
+          agent_type: mergedAgentType,
           tasks: [{
             task_type: "conversation",
             tools_config: {
@@ -410,62 +549,81 @@ export default function AIAgents() {
                 agent_flow_type: "streaming",
                 llm_config: {
                   agent_flow_type: "streaming",
-                  provider: data.provider,
-                  model: data.model,
-                  max_tokens: data.maxTokens,
-                  temperature: data.temperature,
+                  provider: mergedProvider,
+                  model: mergedModel,
+                  max_tokens: mergedMaxTokens,
+                  temperature: mergedTemperature,
                   request_json: true
                 }
               },
               synthesizer: {
-                provider: data.voiceProvider,
-                provider_config: {
-                  voice: data.voiceId,
-                  language: data.language
-                },
-                stream: data.synthesizerStream,
-                buffer_size: data.synthesizerBufferSize,
-                audio_format: data.synthesizerAudioFormat
+                provider: mergedVoiceProvider,
+                provider_config: (() => {
+                  const baseConfig: any = {
+                    voice: mergedVoiceId,
+                    language: mergedLanguage
+                  };
+                  // ElevenLabs requires both voice and voice_id
+                  if (mergedVoiceProvider === "elevenlabs" || mergedVoiceProvider === "ElevenLabs") {
+                    baseConfig.voice_id = mergedVoiceId;
+                    baseConfig.model = "eleven_turbo_v2_5";
+                    baseConfig.sampling_rate = "16000";
+                  }
+                  return baseConfig;
+                })(),
+                stream: data.synthesizerStream ?? true,
+                buffer_size: data.synthesizerBufferSize ?? 150,
+                audio_format: data.synthesizerAudioFormat || "wav"
               },
               transcriber: {
-                provider: data.transcriberProvider,
-                model: data.transcriberModel,
-                language: data.transcriberLanguage,
-                stream: data.transcriberStream,
-                sampling_rate: data.transcriberSamplingRate,
-                encoding: data.transcriberEncoding,
-                endpointing: data.transcriberEndpointing
+                provider: data.transcriberProvider || "deepgram",
+                model: data.transcriberModel || "nova-2",
+                language: data.transcriberLanguage || "en",
+                stream: data.transcriberStream ?? true,
+                sampling_rate: data.transcriberSamplingRate ?? 16000,
+                encoding: data.transcriberEncoding || "linear16",
+                endpointing: data.transcriberEndpointing ?? 100
               }
             },
             task_config: {
-              hangup_after_silence: data.hangupAfterSilence,
-              incremental_delay: data.incrementalDelay,
-              number_of_words_for_interruption: data.numberOfWordsForInterruption,
-              hangup_after_LLMCall: data.hangupAfterLLMCall,
+              hangup_after_silence: data.hangupAfterSilence ?? 10,
+              incremental_delay: data.incrementalDelay ?? 400,
+              number_of_words_for_interruption: data.numberOfWordsForInterruption ?? 2,
+              hangup_after_LLMCall: data.hangupAfterLLMCall ?? false,
               call_cancellation_prompt: data.callCancellationPrompt,
-              backchanneling: data.backchanneling,
-              backchanneling_message_gap: data.backchannelingMessageGap,
-              backchanneling_start_delay: data.backchannelingStartDelay,
-              ambient_noise: data.ambientNoise,
-              ambient_noise_track: data.ambientNoiseTrack,
-              call_terminate: data.callTerminate,
-              voicemail: data.voicemail,
-              disallow_unknown_numbers: data.disallowUnknownNumbers
+              backchanneling: data.backchanneling ?? false,
+              backchanneling_message_gap: data.backchannelingMessageGap ?? 5,
+              backchanneling_start_delay: data.backchannelingStartDelay ?? 5,
+              ambient_noise: data.ambientNoise ?? false,
+              ambient_noise_track: data.ambientNoiseTrack || "office-ambience",
+              call_terminate: data.callTerminate ?? 90,
+              voicemail: data.voicemail ?? false,
+              disallow_unknown_numbers: data.disallowUnknownNumbers ?? false
             }
           }],
           ingest_source_config: data.ingestSourceUrl ? {
-            source_type: data.ingestSourceType,
+            source_type: data.ingestSourceType || "api",
             source_url: data.ingestSourceUrl,
             source_auth_token: data.ingestSourceAuthToken,
             source_name: data.ingestSourceName
           } : undefined
         }
       };
-      
+
       payload.bolnaConfig = bolnaConfig;
-      
+
+      console.log("[Update Agent] Sending payload", payload);
       const res = await apiRequest('PATCH', `/api/ai-agents/${selectedAgent.id}`, payload);
-      return res.json();
+      // Handle response - check if response has content
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const result = await res.json();
+        console.log("[Update Agent] Update successful", result);
+        return result;
+      }
+      // If no JSON content, return success indicator
+      console.log("[Update Agent] Update successful (no JSON response)");
+      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
@@ -478,6 +636,7 @@ export default function AIAgents() {
       });
     },
     onError: (error: Error) => {
+      console.error("[Update Agent] Update failed", error);
       toast({
         title: "Error",
         description: error.message || "Failed to update AI agent",
@@ -487,14 +646,32 @@ export default function AIAgents() {
   });
 
   const handleSubmit = (data: AgentFormValues) => {
+    console.log("[Agent Form] handleSubmit called", { dialogMode, hasSelectedAgent: !!selectedAgent, data });
     if (dialogMode === "edit" && selectedAgent) {
-      updateMutation.mutate(data);
+      console.log("[Agent Form] Calling updateMutation.mutate");
+      updateMutation.mutate(data, {
+        onError: (error) => {
+          console.error("[Agent Form] Update mutation error:", error);
+        }
+      });
     } else {
-      createMutation.mutate(data);
+      console.log("[Agent Form] Calling createMutation.mutate");
+      console.log("[Agent Form] Create mutation state:", {
+        isPending: createMutation.isPending,
+        isError: createMutation.isError,
+        error: createMutation.error
+      });
+      createMutation.mutate(data, {
+        onError: (error) => {
+          console.error("[Agent Form] Create mutation error:", error);
+        },
+        onSuccess: (result) => {
+          console.log("[Agent Form] Create mutation success:", result);
+        }
+      });
     }
-    setIsDialogOpen(false);
-    setSelectedAgent(null);
-    setFormInitialValues(undefined);
+    // Don't close dialog here - let the mutation's onSuccess handler do it
+    // This ensures the mutation completes before closing
   };
 
   const syncMutation = useMutation({
@@ -521,7 +698,13 @@ export default function AIAgents() {
   const deleteMutation = useMutation({
     mutationFn: async (agentId: string) => {
       const res = await apiRequest('DELETE', `/api/ai-agents/${agentId}`);
-      return res.json();
+      // Handle response - check if response has JSON content
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        return res.json();
+      }
+      // If no JSON content, return success indicator
+      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
@@ -538,6 +721,35 @@ export default function AIAgents() {
       });
     },
   });
+
+  const testCallMutation = useMutation({
+    mutationFn: async (data: { agentId: string; recipientPhone: string }) => {
+      const res = await apiRequest('POST', '/api/calls/initiate', data);
+      return res.json();
+    },
+    onSuccess: () => {
+      setIsTestCallOpen(false);
+      setRecipientPhone("");
+      setTestCallAgent(null);
+      toast({
+        title: "Call Initiated",
+        description: "Test call has been initiated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Call Failed",
+        description: error.message || "Failed to initiate call",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleTestCall = (agent: AiAgent) => {
+    setTestCallAgent(agent);
+    setRecipientPhone("");
+    setIsTestCallOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -663,7 +875,7 @@ export default function AIAgents() {
                     </div>
                   </div>
                 )}
-                
+
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-muted-foreground text-xs">Voice</p>
@@ -718,6 +930,7 @@ export default function AIAgents() {
                       variant="default"
                       size="sm"
                       className="flex-1"
+                      onClick={() => handleTestCall(agent)}
                       data-testid={`button-call-${agent.id}`}
                     >
                       <Phone className="h-3 w-3 mr-1" />
@@ -739,9 +952,10 @@ export default function AIAgents() {
                     size="sm"
                     className="flex-1"
                     onClick={() => {
-                      if (confirm(`Are you sure you want to delete "${agent.name}"? This action cannot be undone.`)) {
-                        deleteMutation.mutate(agent.id);
-                      }
+                      console.log("Delete clicked", agent.id);
+                      // if (confirm(`Are you sure you want to delete "${agent.name}"? This action cannot be undone.`)) {
+                      deleteMutation.mutate(agent.id);
+                      // }
                     }}
                     disabled={deleteMutation.isPending}
                     data-testid={`button-delete-${agent.id}`}
@@ -806,7 +1020,7 @@ export default function AIAgents() {
         initialValues={formInitialValues}
         onSubmit={handleSubmit}
         mode={dialogMode}
-        loading={dialogMode === "edit" ? updateMutation.isLoading : createMutation.isLoading}
+        loading={dialogMode === "edit" ? updateMutation.isPending : createMutation.isPending}
         agentFormSchema={agentFormSchema}
         models={bolnaModels}
         voices={bolnaVoices}
@@ -814,11 +1028,54 @@ export default function AIAgents() {
         phoneNumbers={exotelPhoneNumbers.map(p => ({
           id: p.id,
           phoneNumber: p.phoneNumber,
-          provider: p.provider,
-          friendlyName: p.friendlyName || undefined,
+          provider: p.provider || undefined,
+          friendlyName: p.friendlyName || undefined
         }))}
+
         knowledgeBaseItems={knowledgeBaseItems}
       />
+
+      <Dialog open={isTestCallOpen} onOpenChange={setIsTestCallOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Test Call - {testCallAgent?.name}</DialogTitle>
+            <DialogDescription>
+              Enter a phone number to make a test call with this agent.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="phone" className="text-right text-sm font-medium">
+                Phone Number
+              </label>
+              <Input
+                id="phone"
+                placeholder="+1234567890"
+                value={recipientPhone}
+                onChange={(e) => setRecipientPhone(e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsTestCallOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => testCallAgent && testCallMutation.mutate({
+                agentId: testCallAgent.id,
+                recipientPhone
+              })}
+              disabled={!recipientPhone || testCallMutation.isPending}
+            >
+              {testCallMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Call Now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

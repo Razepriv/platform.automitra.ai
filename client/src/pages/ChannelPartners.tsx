@@ -133,8 +133,8 @@ export default function ChannelPartners() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category} value={category || ''}>
+                {categories.map((category, index) => (
+                  <SelectItem key={`category-${index}-${category}`} value={category || ''}>
                     {category}
                   </SelectItem>
                 ))}

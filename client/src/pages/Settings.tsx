@@ -30,6 +30,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { queryClient } from "@/lib/queryClient";
 import { useSocketEvent } from "@/lib/useSocket";
+import { type Organization, type PhoneNumber, type AiAgent } from "@shared/schema";
 
 export default function Settings() {
   const { user } = useAuth();
@@ -48,62 +49,63 @@ export default function Settings() {
   const [isEnablingCallAlerts, setIsEnablingCallAlerts] = useState(false);
   const [isEnablingDailySummary, setIsEnablingDailySummary] = useState(false);
 
-  const { data: phoneNumbers = [] } = useQuery({
+  const { data: phoneNumbers = [] } = useQuery<PhoneNumber[]>({
     queryKey: ["/api/phone-numbers"],
   });
 
-  const { data: aiAgents = [] } = useQuery({
+  const { data: aiAgents = [] } = useQuery<AiAgent[]>({
     queryKey: ["/api/ai-agents"],
   });
 
-  const { data: organization } = useQuery({
+  const { data: organization } = useQuery<Organization>({
     queryKey: ["/api/organization"],
-    onSuccess: (data) => {
-      if (data) {
-        setCompanyName(data.companyName || "");
-        setLogoUrl(data.logoUrl || "");
-        setPrimaryColor(data.primaryColor || "");
-      }
-    },
   });
+
+  useEffect(() => {
+    if (organization) {
+      setCompanyName(organization.companyName || "");
+      setLogoUrl(organization.logoUrl || "");
+      setPrimaryColor(organization.primaryColor || "");
+    }
+  }, [organization]);
 
 
   // Real-time updates for all settings-related entities
   useSocketEvent('organization:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/organization'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('phone:created', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('phone:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('agent:created', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('agent:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('campaign:created', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/campaigns-list'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('campaign:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/campaigns-list'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('contact:created', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   useSocketEvent('contact:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
-  }, user?.organizationId);
+  }, user?.organizationId || "");
 
   const updateWhitelabelMutation = useMutation({
     mutationFn: async (data: { companyName: string; logoUrl: string; primaryColor: string }) => {
@@ -427,9 +429,9 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label>Logo Preview</Label>
                   <div className="border rounded-md p-4 bg-muted/50">
-                    <img 
-                      src={logoUrl} 
-                      alt="Logo preview" 
+                    <img
+                      src={logoUrl}
+                      alt="Logo preview"
                       className="h-12 object-contain"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';

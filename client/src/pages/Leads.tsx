@@ -25,13 +25,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
-import { 
-  Search, 
-  Filter, 
-  Phone, 
-  Mail, 
-  MoreHorizontal, 
-  Sparkles, 
+import {
+  Search,
+  Filter,
+  Phone,
+  Mail,
+  MoreHorizontal,
+  Sparkles,
   Plus,
   ArrowUpDown,
   Bot
@@ -99,12 +99,12 @@ export default function Leads() {
   };
 
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = 
+    const matchesSearch =
       lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (lead.email?.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (lead.phone?.includes(searchQuery)) ||
       (lead.company?.toLowerCase().includes(searchQuery.toLowerCase()));
-    
+
     const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
 
     return matchesSearch && matchesStatus;
@@ -129,8 +129,8 @@ export default function Leads() {
           <p className="text-muted-foreground">Manage and track your incoming leads</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button 
-            onClick={() => autoAssignMutation.mutate()} 
+          <Button
+            onClick={() => autoAssignMutation.mutate()}
             disabled={autoAssignMutation.isPending}
             className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/20"
           >
@@ -237,7 +237,7 @@ export default function Leads() {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {format(new Date(lead.createdAt), "MMM d, yyyy")}
+                        {format(new Date(lead.createdAt || Date.now()), "MMM d, yyyy")}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -250,7 +250,7 @@ export default function Leads() {
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuItem onClick={() => handleEdit(lead)}>Edit Lead</DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => deleteMutation.mutate(lead.id)}
                             >
@@ -268,10 +268,10 @@ export default function Leads() {
         </CardContent>
       </Card>
 
-      <LeadDialog 
-        open={isDialogOpen} 
-        onOpenChange={setIsDialogOpen} 
-        lead={selectedLead} 
+      <LeadDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        lead={selectedLead}
       />
     </div>
   );

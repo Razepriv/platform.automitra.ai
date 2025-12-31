@@ -83,10 +83,7 @@ export interface IStorage {
   getCallByExotelSid(exotelSid: string): Promise<Call | undefined>;
   createCall(call: InsertCall): Promise<Call>;
   updateCall(id: string, organizationId: string, call: Partial<InsertCall>): Promise<Call | undefined>;
-  createLead(lead: InsertLead): Promise<Lead>;
-  createLeadsBulk(leads: InsertLead[], organizationId: string): Promise<Lead[]>;
-  updateLead(id: string, organizationId: string, lead: Partial<InsertLead>): Promise<Lead | undefined>;
-  getLeadsByAgent(agentId: string, organizationId: string): Promise<Lead[]>;
+
 
   // Channel Partner operations
   getChannelPartners(organizationId: string): Promise<ChannelPartner[]>;
@@ -127,7 +124,7 @@ export interface IStorage {
   getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics>;
   getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]>;
   getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]>;
-  
+
   // Billing operations
   getBillingMetrics(organizationId: string): Promise<BillingMetrics>;
 }
@@ -209,6 +206,8 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(calls.id, id), eq(calls.organizationId, organizationId)));
     return call || undefined;
   }
+  // NOTE: These methods don't filter by organizationId because they're used in webhook contexts
+  // where we only have the external ID. The calling code MUST validate organizationId after retrieval.
   async getCallByBolnaCallId(bolnaCallId: string): Promise<Call | undefined> {
     const [call] = await db.select().from(calls)
       .where(eq(calls.bolnaCallId, bolnaCallId));
@@ -230,21 +229,21 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated || undefined;
   }
-    // Contact operations
+  // Contact operations
 
-    // Phone Number operations
-    async getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]> {
-      return await db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, organizationId));
-    }
-    async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
-      const [contact] = await db.insert(contacts).values(contactData).returning();
-      return contact;
-    }
+  // Phone Number operations
+  async getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]> {
+    return await db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, organizationId));
+  }
+  async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
+    const [contact] = await db.insert(contacts).values(contactData).returning();
+    return contact;
+  }
 
-    async getContacts(organizationId: string) {
-      // List all contacts for an organization
-      return await db.select().from(contacts).where(eq(contacts.organizationId, organizationId));
-    }
+  async getContacts(organizationId: string) {
+    // List all contacts for an organization
+    return await db.select().from(contacts).where(eq(contacts.organizationId, organizationId));
+  }
   // User operations
   async getUser(id: string, organizationId?: string): Promise<User | undefined> {
     if (organizationId) {
@@ -363,8 +362,10 @@ export class DatabaseStorage implements IStorage {
 
   // AI Agent operations
   async getAIAgents(organizationId: string): Promise<AiAgent[]> {
-    // Return all agents for all organizations (multi-tenant)
-    return await db.select().from(aiAgents).orderBy(desc(aiAgents.createdAt));
+    // CRITICAL: Filter by organizationId for multi-tenant isolation
+    return await db.select().from(aiAgents)
+      .where(eq(aiAgents.organizationId, organizationId))
+      .orderBy(desc(aiAgents.createdAt));
   }
 
   async getAIAgent(id: string, organizationId: string): Promise<AiAgent | undefined> {
@@ -388,15 +389,50 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- STUBS for missing IStorage methods ---
-  async getChannelPartners(organizationId: string): Promise<ChannelPartner[]> { throw new Error('Not implemented'); }
-  async getChannelPartner(id: string, organizationId: string): Promise<ChannelPartner | undefined> { throw new Error('Not implemented'); }
-  async createChannelPartner(partner: InsertChannelPartner): Promise<ChannelPartner> { throw new Error('Not implemented'); }
-  async createChannelPartnersBulk(partners: InsertChannelPartner[], organizationId: string): Promise<ChannelPartner[]> { throw new Error('Not implemented'); }
-  async updateChannelPartner(id: string, organizationId: string, partner: Partial<InsertChannelPartner>): Promise<ChannelPartner | undefined> { throw new Error('Not implemented'); }
-  async getVisits(organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
-  async getVisitsByManager(managerId: string, organizationId: string): Promise<Visit[]> { throw new Error('Not implemented'); }
-  async createVisit(visit: InsertVisit): Promise<Visit> { throw new Error('Not implemented'); }
-  async updateVisit(id: string, organizationId: string, visit: Partial<InsertVisit>): Promise<Visit | undefined> { throw new Error('Not implemented'); }
+  async getChannelPartners(organizationId: string): Promise<ChannelPartner[]> {
+    return await db.select().from(channelPartners).where(eq(channelPartners.organizationId, organizationId));
+  }
+  async getChannelPartner(id: string, organizationId: string): Promise<ChannelPartner | undefined> {
+    const [partner] = await db.select().from(channelPartners)
+      .where(and(eq(channelPartners.id, id), eq(channelPartners.organizationId, organizationId)));
+    return partner || undefined;
+  }
+  async createChannelPartner(partner: InsertChannelPartner): Promise<ChannelPartner> {
+    const [created] = await db.insert(channelPartners).values(partner).returning();
+    return created;
+  }
+  async createChannelPartnersBulk(partners: InsertChannelPartner[], organizationId: string): Promise<ChannelPartner[]> {
+    const created = await db.insert(channelPartners)
+      .values(partners.map(p => ({ ...p, organizationId })))
+      .returning();
+    return created;
+  }
+  async updateChannelPartner(id: string, organizationId: string, partner: Partial<InsertChannelPartner>): Promise<ChannelPartner | undefined> {
+    const [updated] = await db.update(channelPartners)
+      .set({ ...partner, updatedAt: new Date() })
+      .where(and(eq(channelPartners.id, id), eq(channelPartners.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getVisits(organizationId: string): Promise<Visit[]> {
+    return await db.select().from(visits).where(eq(visits.organizationId, organizationId));
+  }
+  async getVisitsByManager(managerId: string, organizationId: string): Promise<Visit[]> {
+    return await db.select().from(visits)
+      .where(and(eq(visits.managerId, managerId), eq(visits.organizationId, organizationId)));
+  }
+  async createVisit(visit: InsertVisit): Promise<Visit> {
+    const [created] = await db.insert(visits).values(visit).returning();
+    return created;
+  }
+  async updateVisit(id: string, organizationId: string, visit: Partial<InsertVisit>): Promise<Visit | undefined> {
+    const [updated] = await db.update(visits)
+      .set({ ...visit, updatedAt: new Date() })
+      .where(and(eq(visits.id, id), eq(visits.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
   async getKnowledgeBase(organizationId: string): Promise<KnowledgeBase[]> {
     return await db.select().from(knowledgeBase).where(eq(knowledgeBase.organizationId, organizationId));
   }
@@ -409,15 +445,63 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(knowledgeBase.id, id), eq(knowledgeBase.organizationId, organizationId)));
     return kb || undefined;
   }
-  async createKnowledgeBase(knowledge: InsertKnowledgeBase): Promise<KnowledgeBase> { throw new Error('Not implemented'); }
-  async updateKnowledgeBase(id: string, organizationId: string, knowledge: UpdateKnowledgeBaseInput): Promise<KnowledgeBase | undefined> { throw new Error('Not implemented'); }
-  async deleteKnowledgeBase(id: string, organizationId: string): Promise<boolean> { throw new Error('Not implemented'); }
-  async getUsageTracking(organizationId: string, daysAgo?: number): Promise<UsageTracking[]> { throw new Error('Not implemented'); }
-  async createUsageTracking(usage: InsertUsageTracking): Promise<UsageTracking> { throw new Error('Not implemented'); }
-  async getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics> { throw new Error('Not implemented'); }
-  async getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]> { throw new Error('Not implemented'); }
-  async getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]> { throw new Error('Not implemented'); }
-  async getBillingMetrics(organizationId: string): Promise<BillingMetrics> { throw new Error('Not implemented'); }
+  async createKnowledgeBase(knowledge: InsertKnowledgeBase): Promise<KnowledgeBase> {
+    const [created] = await db.insert(knowledgeBase).values(knowledge).returning();
+    return created;
+  }
+  async updateKnowledgeBase(id: string, organizationId: string, knowledge: UpdateKnowledgeBaseInput): Promise<KnowledgeBase | undefined> {
+    const [updated] = await db.update(knowledgeBase)
+      .set({ ...knowledge, updatedAt: new Date() })
+      .where(and(eq(knowledgeBase.id, id), eq(knowledgeBase.organizationId, organizationId)))
+      .returning();
+    return updated || undefined;
+  }
+  async deleteKnowledgeBase(id: string, organizationId: string): Promise<boolean> {
+    const result = await db.delete(knowledgeBase)
+      .where(and(eq(knowledgeBase.id, id), eq(knowledgeBase.organizationId, organizationId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async getUsageTracking(organizationId: string, daysAgo?: number): Promise<UsageTracking[]> {
+    return await db.select().from(usageTracking).where(eq(usageTracking.organizationId, organizationId));
+  }
+  async createUsageTracking(usage: InsertUsageTracking): Promise<UsageTracking> {
+    const [created] = await db.insert(usageTracking).values(usage).returning();
+    return created;
+  }
+
+  async getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics> {
+    // Return zero-filled stub for now to prevent runtime errors
+    return {
+      totalCalls: 0,
+      totalDuration: 0,
+      totalCost: 0,
+      averageCallDuration: 0,
+      averageCostPerCall: 0,
+      sentimentAnalysis: { positive: 0, neutral: 0, negative: 0 },
+      callOutcomeDistribution: {},
+      callVolumeByHour: []
+    };
+  }
+  async getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]> {
+    return [];
+  }
+  async getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]> {
+    return [];
+  }
+  async getBillingMetrics(organizationId: string): Promise<BillingMetrics> {
+    return {
+      totalBalance: 0,
+      totalSpent: 0,
+      monthlySpending: [],
+      costBreakdown: {
+        telephony: 0,
+        llm: 0,
+        platform: 0
+      }
+    };
+  }
 }
 
 // Export a singleton instance for use throughout the app
