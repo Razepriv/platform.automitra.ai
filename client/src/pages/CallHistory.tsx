@@ -169,7 +169,11 @@ export default function CallHistory() {
 
   useWebSocketEvent<Call>('call:created', useCallback((newCall: Call) => {
     console.log('[CallHistory] Received call:created', newCall);
-    queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
+    queryClient.setQueryData(['/api/calls', user?.id], (oldData: Call[] = []) => {
+      // Only add if not already in the list
+      if (oldData.some(c => c.id === newCall.id)) {
+        return oldData;
+      }
       return [newCall, ...oldData];
     });
     toast({
@@ -180,7 +184,7 @@ export default function CallHistory() {
 
   useWebSocketEvent<Call>('call:updated', useCallback((updatedCall: Call) => {
     console.log('[CallHistory] Received call:updated', updatedCall);
-    queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
+    queryClient.setQueryData(['/api/calls', user?.id], (oldData: Call[] = []) => {
       return oldData.map(call =>
         call.id === updatedCall.id ? updatedCall : call
       );
@@ -228,7 +232,7 @@ export default function CallHistory() {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calls"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calls", user?.id] });
       toast({
         title: "Call initiated",
         description: "Your call has been successfully initiated.",
