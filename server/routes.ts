@@ -3146,11 +3146,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   return httpServer;
 }
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
-    }
-  });
 
   // WebSocket connection handler with isolation verification
   io.on('connection', async (socket: any) => {
