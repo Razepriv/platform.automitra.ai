@@ -3144,9 +3144,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  return httpServer;
-}
-
   // WebSocket setup for real-time updates
   const io = new SocketIOServer(httpServer, {
     cors: {
