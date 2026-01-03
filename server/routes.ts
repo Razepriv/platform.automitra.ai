@@ -239,9 +239,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userIdentifier = user.firstName || user.email || user.id;
       
       // Ensure webhook URL is set for call updates
-      const defaultWebhookUrl = process.env.PUBLIC_WEBHOOK_URL
-        ? `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`
-        : null;
+      let defaultWebhookUrl: string | null = null;
+      if (process.env.PUBLIC_WEBHOOK_URL) {
+        const baseUrl = process.env.PUBLIC_WEBHOOK_URL.startsWith('http://') || process.env.PUBLIC_WEBHOOK_URL.startsWith('https://')
+          ? process.env.PUBLIC_WEBHOOK_URL
+          : `https://${process.env.PUBLIC_WEBHOOK_URL}`;
+        defaultWebhookUrl = `${baseUrl}/api/webhooks/bolna/call-status`;
+      }
       
       const agentData: InsertAiAgent = {
         ...clientData,
@@ -482,10 +486,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const telephonyProvider = "plivo";
 
         // Ensure webhook URL is set for call updates
-        const defaultWebhookUrl = process.env.PUBLIC_WEBHOOK_URL
-          ? `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`
-          : null;
-        const webhookUrl = agent.webhookUrl || defaultWebhookUrl;
+        let defaultWebhookUrl: string | null = null;
+        if (process.env.PUBLIC_WEBHOOK_URL) {
+          const baseUrl = process.env.PUBLIC_WEBHOOK_URL.startsWith('http://') || process.env.PUBLIC_WEBHOOK_URL.startsWith('https://')
+            ? process.env.PUBLIC_WEBHOOK_URL
+            : `https://${process.env.PUBLIC_WEBHOOK_URL}`;
+          defaultWebhookUrl = `${baseUrl}/api/webhooks/bolna/call-status`;
+        }
+        let webhookUrl = agent.webhookUrl || defaultWebhookUrl;
+        // Normalize webhook URL to ensure it has protocol
+        if (webhookUrl && !webhookUrl.startsWith('http://') && !webhookUrl.startsWith('https://')) {
+          webhookUrl = `https://${webhookUrl}`;
+        }
         
         console.log(`[Bolna Sync] Setting webhook URL for agent ${agent.name}:`, webhookUrl || 'none');
 
@@ -646,6 +658,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Agent is not configured with Bolna" });
       }
 
+      // Auto-fetch contact name from lead if leadId is provided and contactName is not explicitly set
+      let finalContactName = contactName;
+      let finalLeadId = leadId;
+      
+      // If leadId is provided, fetch the lead to get contact name
+      if (leadId && !finalContactName) {
+        try {
+          const lead = await storage.getLead(leadId, user.organizationId);
+          if (lead) {
+            finalContactName = lead.name;
+            finalLeadId = lead.id;
+            console.log(`[Call Initiate] Auto-extracted contact name from lead: ${finalContactName}`);
+            
+            // Also use lead's phone if recipientPhone matches or is not provided
+            if (lead.phone && (!recipientPhone || lead.phone === recipientPhone)) {
+              console.log(`[Call Initiate] Using lead phone number: ${lead.phone}`);
+            }
+          } else {
+            console.warn(`[Call Initiate] Lead ${leadId} not found, proceeding without contact name`);
+          }
+        } catch (leadError) {
+          console.error(`[Call Initiate] Error fetching lead ${leadId}:`, leadError);
+          // Continue without contact name if lead fetch fails
+        }
+      }
+      
+      // If no leadId but recipientPhone is provided, try to find lead by phone number
+      if (!finalLeadId && recipientPhone && !finalContactName) {
+        try {
+          // Normalize phone number for comparison (remove +, spaces, dashes)
+          const normalizePhone = (phone: string) => phone.replace(/[\s\-+()]/g, '');
+          const normalizedRecipientPhone = normalizePhone(recipientPhone);
+          
+          const leads = await storage.getLeads(user.organizationId);
+          const matchingLead = leads.find(lead => {
+            if (!lead.phone) return false;
+            const normalizedLeadPhone = normalizePhone(lead.phone);
+            return normalizedLeadPhone === normalizedRecipientPhone || 
+                   normalizedLeadPhone === normalizedRecipientPhone.replace(/^\+/, '') ||
+                   normalizedRecipientPhone === normalizedLeadPhone.replace(/^\+/, '');
+          });
+          
+          if (matchingLead) {
+            finalContactName = matchingLead.name;
+            finalLeadId = matchingLead.id;
+            console.log(`[Call Initiate] Auto-found lead by phone number: ${finalContactName} (${matchingLead.id})`);
+          } else {
+            console.log(`[Call Initiate] No lead found for phone number: ${recipientPhone}`);
+          }
+        } catch (leadError) {
+          console.error(`[Call Initiate] Error searching for lead by phone:`, leadError);
+          // Continue without contact name if search fails
+        }
+      }
+
       let callerId = fromPhone;
       if (!callerId && agent.assignedPhoneNumberId) {
         const assignedPhone = await storage.getPhoneNumber(agent.assignedPhoneNumberId, user.organizationId);
@@ -659,10 +726,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create call record in database
       const callData: InsertCall = {
         organizationId: user.organizationId,
-        leadId: leadId || null,
+        leadId: finalLeadId || null,
         agentId,
         contactPhone: recipientPhone,
-        contactName: contactName || null,
+        contactName: finalContactName || null,
         callType: 'outbound',
         direction: 'outbound',
         status: 'initiated',
@@ -680,8 +747,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           from_phone_number: callerId,
           user_data: buildBolnaUserData({
             callId: call.id,
-            leadId,
-            contactName,
+            leadId: finalLeadId,
+            contactName: finalContactName,
             organizationId: user.organizationId,
           }),
         });
@@ -699,8 +766,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             from: callerId,
             metadata: {
               callId: call.id,
-              leadId,
-              contactName,
+              leadId: finalLeadId,
+              contactName: finalContactName,
               organizationId: user.organizationId,
             },
           });
@@ -827,6 +894,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (context_details?.recipient_data?.callId && context_details?.recipient_data?.organizationId) {
         console.log(`[Bolna Webhook] Trying context_details: callId=${context_details.recipient_data.callId}, org=${context_details.recipient_data.organizationId}`);
         call = await storage.getCall(context_details.recipient_data.callId, context_details.recipient_data.organizationId);
+        
+        // Log contactName if available in context_details
+        if (context_details?.recipient_data?.contactName) {
+          console.log(`[Bolna Webhook] Contact name from context: ${context_details.recipient_data.contactName}`);
+        }
       }
 
       // Method 2: Try to find call by Bolna call ID
@@ -878,10 +950,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : call.endedAt,
       };
 
-      // Add Bolna cost information if available
-      if (total_cost !== undefined) {
-        updates.bolnaCostPerMinute = Number(total_cost);
+      // Extract contactName from webhook if available (from context_details or user_data)
+      const contactName = context_details?.recipient_data?.contactName || 
+                         context_details?.user_data?.contactName ||
+                         context_details?.user_data?.contact_name;
+      if (contactName && !call.contactName) {
+        updates.contactName = contactName;
+        console.log(`[Bolna Webhook] Contact name extracted: ${contactName}`);
       }
+
+      // Add Bolna cost information if available
+      // Note: total_cost from Bolna is the total cost, we store it in bolnaCostPerMinute field
+      if (total_cost !== undefined && total_cost !== null) {
+        updates.bolnaCostPerMinute = Number(total_cost);
+        console.log(`[Bolna Webhook] Cost: $${total_cost}`);
+      }
+
+      // Log all captured fields for verification
+      console.log(`[Bolna Webhook] Captured fields:`);
+      console.log(`   - Status: ${normalizedStatus}`);
+      console.log(`   - Duration: ${callDuration}s`);
+      console.log(`   - Transcription: ${transcript ? 'Yes (' + transcript.substring(0, 50) + '...)' : 'No'}`);
+      console.log(`   - Recording URL: ${telephony_data?.recording_url || recording_url || 'Not provided'}`);
+      console.log(`   - Cost: ${total_cost !== undefined ? '$' + total_cost : 'Not provided'}`);
+      console.log(`   - Contact Name: ${contactName || call.contactName || 'Not provided'}`);
 
       console.log(`[Bolna Webhook] Updating call with:`, JSON.stringify(updates, null, 2));
 
@@ -1394,19 +1486,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all knowledge bases for organization/agent
   app.get('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
     try {
-      const { agentId } = req.query;
-      const user = req.user;
+      const userId = req.user.claims.sub;
+      console.log(`[KB GET] User ID: ${userId}`);
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        console.error(`[KB GET] User not found for ID: ${userId}`);
+        return res.status(404).json({ message: "User not found" });
+      }
 
+      console.log(`[KB GET] Organization ID: ${user.organizationId}`);
+      console.log(`[KB GET] Query params:`, req.query);
+
+      const { agentId } = req.query;
       let kbs;
       if (agentId) {
+        console.log(`[KB GET] Fetching knowledge bases for agent: ${agentId}`);
         kbs = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
       } else {
+        console.log(`[KB GET] Fetching all knowledge bases for organization`);
         kbs = await storage.getKnowledgeBase(user.organizationId);
       }
 
-      res.json(kbs);
+      console.log(`[KB GET] Found ${kbs.length} knowledge base(s)`);
+      if (kbs.length > 0) {
+        console.log(`[KB GET] Knowledge bases:`, kbs.map(kb => ({
+          id: kb.id,
+          title: kb.title,
+          organizationId: kb.organizationId,
+          agentId: kb.agentId,
+        })));
+      }
+
+      // Defensive validation
+      const validKnowledge = kbs.filter(k => k.organizationId === user.organizationId);
+      if (validKnowledge.length !== kbs.length) {
+        console.error("WARNING: Storage returned cross-tenant knowledge base data");
+      }
+
+      console.log(`[KB GET] ✅ Returning ${validKnowledge.length} knowledge base(s)`);
+      res.json(validKnowledge);
     } catch (error) {
-      console.error("Error fetching knowledge bases:", error);
+      console.error("[KB GET] ❌ Error fetching knowledge bases:", error);
       res.status(500).json({ message: "Failed to fetch knowledge bases", error: (error as Error).message });
     }
   });
@@ -1414,9 +1535,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get knowledge base details
   app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const kb = await storage.getKnowledgeBaseItem(req.params.id, req.user.organizationId);
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const kb = await storage.getKnowledgeBaseItem(req.params.id, user.organizationId);
 
       if (!kb) {
+        return res.status(404).json({ message: "Knowledge base not found" });
+      }
+
+      // Defensive validation
+      if (kb.organizationId !== user.organizationId) {
+        console.error("WARNING: Storage returned cross-tenant knowledge base item");
         return res.status(404).json({ message: "Knowledge base not found" });
       }
 
@@ -2093,60 +2226,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Knowledge Base routes
-  app.get('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      const knowledge = await storage.getKnowledgeBase(user.organizationId);
-
-      // Defensive validation
-      const validKnowledge = knowledge.filter(k => k.organizationId === user.organizationId);
-      if (validKnowledge.length !== knowledge.length) {
-        console.error("WARNING: Storage returned cross-tenant knowledge base data");
-      }
-
-      res.json(validKnowledge);
-    } catch (error) {
-      console.error("Error fetching knowledge base:", error);
-      res.status(500).json({ message: "Failed to fetch knowledge base" });
-    }
-  });
-
-  app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      const item = await storage.getKnowledgeBaseItem(req.params.id, user.organizationId);
-      if (!item) {
-        return res.status(404).json({ message: "Knowledge base item not found" });
-      }
-
-      // Defensive validation
-      if (item.organizationId !== user.organizationId) {
-        console.error("WARNING: Storage returned cross-tenant knowledge base item");
-        return res.status(404).json({ message: "Knowledge base item not found" });
-      }
-
-      res.json(item);
-    } catch (error) {
-      console.error("Error fetching knowledge base item:", error);
-      res.status(500).json({ message: "Failed to fetch knowledge base item" });
-    }
-  });
+  // Duplicate routes removed - using the ones defined earlier (lines 1487-1536)
 
   app.post('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      console.log(`[KB Create] User ID: ${userId}`);
+      
       const user = await storage.getUser(userId);
       if (!user) {
+        console.error(`[KB Create] User not found for ID: ${userId}`);
         return res.status(404).json({ message: "User not found" });
       }
+
+      console.log(`[KB Create] Organization ID: ${user.organizationId}`);
+      console.log(`[KB Create] Request body:`, JSON.stringify(req.body, null, 2));
 
       // Validate using strict schema that rejects organizationId
       const clientData: CreateKnowledgeBaseInput = createKnowledgeBaseSchema.parse(req.body);
@@ -2157,14 +2251,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         organizationId: user.organizationId,
       };
 
+      console.log(`[KB Create] Creating knowledge base with data:`, JSON.stringify(knowledgeData, null, 2));
+
       const item = await storage.createKnowledgeBase(knowledgeData);
+      
+      console.log(`[KB Create] ✅ Knowledge base created successfully:`, {
+        id: item.id,
+        title: item.title,
+        organizationId: item.organizationId,
+        agentId: item.agentId,
+      });
+
       res.json(item);
     } catch (error) {
-      console.error("Error creating knowledge base item:", error);
+      console.error("[KB Create] ❌ Error creating knowledge base item:", error);
       if (error instanceof Error && 'issues' in error) {
         return res.status(400).json({ message: "Invalid request data", errors: (error as any).issues });
       }
-      res.status(500).json({ message: "Failed to create knowledge base item" });
+      res.status(500).json({ message: "Failed to create knowledge base item", error: (error as Error).message });
     }
   });
 

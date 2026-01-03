@@ -20,10 +20,16 @@ Your application is already configured to use Supabase Auth:
 ### Step 2: Configure URL Settings
 
 1. Go to **Authentication** → **URL Configuration**
-2. Set **Site URL**: `http://localhost:5000`
+2. Set **Site URL**: 
+   - For development: `http://localhost:5000`
+   - For production: `https://platform.automitra.ai`
 3. Under **Redirect URLs**, add:
-   - `http://localhost:5000/**`
+   - For development: `http://localhost:5000/**`
+   - For production: `https://platform.automitra.ai/**`
+   - **Important**: Also add the callback endpoint: `https://platform.automitra.ai/api/auth/callback`
    - Click **Save**
+
+**Note**: The application is configured to use `https://platform.automitra.ai` for email verification links by default. You can override this by setting `AUTH_REDIRECT_URL` in your `.env` file.
 
 ### Step 3: Verify Database Tables
 

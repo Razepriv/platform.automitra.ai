@@ -739,6 +739,9 @@ export async function setupAuth(app: Express) {
       const sanitizedEmail = sanitizeInput(email.toLowerCase());
       const sanitizedName = sanitizeInput(fullName);
 
+      // Get redirect URL for email verification (defaults to platform.automitra.ai)
+      const authRedirectUrl = process.env.AUTH_REDIRECT_URL || process.env.SITE_URL || "https://platform.automitra.ai";
+
       // Create user in Supabase
       const { data, error } = await supabaseAuthClient.auth.signUp({
         email: sanitizedEmail,
@@ -747,6 +750,7 @@ export async function setupAuth(app: Express) {
           data: {
             full_name: sanitizedName,
           },
+          emailRedirectTo: `${authRedirectUrl}/api/auth/callback`,
         },
       });
 
@@ -778,6 +782,64 @@ export async function setupAuth(app: Express) {
       console.error("Signup error:", err);
       const message = err?.message || "Unable to create account";
       return isJson ? res.status(500).json({ message }) : res.redirect(`/api/signup?error=${encodeURIComponent(message)}`);
+    }
+  });
+
+  // Auth callback endpoint for email verification and magic links
+  app.get("/api/auth/callback", async (req, res) => {
+    const { token_hash, type, code } = req.query;
+    
+    try {
+      // Handle email verification with token_hash (Supabase email verification)
+      if (token_hash && type) {
+        const { data, error } = await supabaseAuthClient.auth.verifyOtp({
+          token_hash: token_hash as string,
+          type: type as any,
+        });
+
+        if (error || !data.session || !data.user) {
+          console.error("Auth callback error:", error?.message);
+          return res.redirect(`/api/login?error=${encodeURIComponent(error?.message || "Verification failed")}`);
+        }
+
+        // Create user in app database if needed
+        await ensureAppUser(data.user);
+        
+        // Create session
+        const sessionUser = buildSessionUser(data.user, data.session);
+        req.session.user = sessionUser;
+        req.user = sessionUser;
+
+        console.log(`✅ Email verified and logged in: ${data.user.email}`);
+        return res.redirect("/?verified=true");
+      }
+
+      // Handle PKCE flow with code (for OAuth and some email flows)
+      if (code) {
+        const { data, error } = await supabaseAuthClient.auth.exchangeCodeForSession(code as string);
+
+        if (error || !data.session || !data.user) {
+          console.error("Auth callback error:", error?.message);
+          return res.redirect(`/api/login?error=${encodeURIComponent(error?.message || "Verification failed")}`);
+        }
+
+        // Create user in app database if needed
+        await ensureAppUser(data.user);
+        
+        // Create session
+        const sessionUser = buildSessionUser(data.user, data.session);
+        req.session.user = sessionUser;
+        req.user = sessionUser;
+
+        console.log(`✅ Session created via callback: ${data.user.email}`);
+        return res.redirect("/?verified=true");
+      }
+
+      // If no token or code, check if user is already verified and redirect accordingly
+      return res.redirect("/api/login?success=Email%20verified%20successfully");
+    } catch (err: any) {
+      console.error("Auth callback error:", err);
+      return res.redirect(`/api/login?error=${encodeURIComponent(err?.message || "Verification failed")}`);
     }
   });
 

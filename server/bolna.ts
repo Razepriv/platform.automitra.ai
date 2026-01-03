@@ -235,6 +235,22 @@ export class BolnaClient {
     }
   }
 
+  /**
+   * Normalize webhook URL to ensure it has a protocol
+   * If the URL doesn't start with http:// or https://, add https://
+   */
+  private normalizeWebhookUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    
+    // If URL already has protocol, return as is
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    
+    // Add https:// if missing
+    return `https://${url}`;
+  }
+
   private ensureConfigured(): void {
     if (!this.isConfigured || !this.apiKey) {
       throw new Error("Bolna API is not configured. Set BOLNA_API_KEY to use Bolna features.");
@@ -411,7 +427,11 @@ export class BolnaClient {
 
       // Ensure webhook URL is set if not provided
       if (!config.agent_config.webhook_url && process.env.PUBLIC_WEBHOOK_URL) {
-        config.agent_config.webhook_url = `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`;
+        const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+        config.agent_config.webhook_url = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
+      } else if (config.agent_config.webhook_url) {
+        // Normalize existing webhook URL
+        config.agent_config.webhook_url = this.normalizeWebhookUrl(config.agent_config.webhook_url);
       }
 
       // CRITICAL: Ensure synthesizer has required voice fields for ElevenLabs
@@ -545,11 +565,13 @@ export class BolnaClient {
 
     // Build minimal required config for Bolna v2 API
     // Use agent's webhookUrl if provided, otherwise fall back to env variable
-    const webhookUrl = agentData.webhookUrl 
-      ? agentData.webhookUrl
-      : (process.env.PUBLIC_WEBHOOK_URL
-          ? `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`
-          : null);
+    let webhookUrl: string | null = null;
+    if (agentData.webhookUrl) {
+      webhookUrl = this.normalizeWebhookUrl(agentData.webhookUrl);
+    } else if (process.env.PUBLIC_WEBHOOK_URL) {
+      const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+      webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
+    }
     
     console.log(`[Bolna] Setting webhook URL for agent ${agentData.name}:`, webhookUrl || 'none');
 
@@ -743,13 +765,15 @@ export class BolnaClient {
     existingAgentConfig: any
   ): Promise<BolnaAgent> {
     // Use agent's webhookUrl if provided in updates, otherwise use existing, otherwise fall back to env variable
-    const webhookUrl = updates.webhookUrl !== undefined
-      ? (updates.webhookUrl || null)
-      : (existingAgentConfig?.agent_config?.webhook_url
-          ? existingAgentConfig.agent_config.webhook_url
-          : (process.env.PUBLIC_WEBHOOK_URL
-              ? `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`
-              : null));
+    let webhookUrl: string | null = null;
+    if (updates.webhookUrl !== undefined) {
+      webhookUrl = this.normalizeWebhookUrl(updates.webhookUrl || null);
+    } else if (existingAgentConfig?.agent_config?.webhook_url) {
+      webhookUrl = this.normalizeWebhookUrl(existingAgentConfig.agent_config.webhook_url);
+    } else if (process.env.PUBLIC_WEBHOOK_URL) {
+      const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+      webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
+    }
     
     console.log(`[Bolna] Updating webhook URL for agent ${agentId}:`, webhookUrl || 'none');
 
@@ -1012,13 +1036,15 @@ export class BolnaClient {
     existingAgentConfig: any
   ): Promise<BolnaAgent> {
     // Use agent's webhookUrl if provided in updates, otherwise use existing, otherwise fall back to env variable
-    const webhookUrl = updates.webhookUrl !== undefined
-      ? (updates.webhookUrl || null)
-      : (existingAgentConfig?.agent_config?.webhook_url
-          ? existingAgentConfig.agent_config.webhook_url
-          : (process.env.PUBLIC_WEBHOOK_URL
-              ? `${process.env.PUBLIC_WEBHOOK_URL}/api/webhooks/bolna/call-status`
-              : null));
+    let webhookUrl: string | null = null;
+    if (updates.webhookUrl !== undefined) {
+      webhookUrl = this.normalizeWebhookUrl(updates.webhookUrl || null);
+    } else if (existingAgentConfig?.agent_config?.webhook_url) {
+      webhookUrl = this.normalizeWebhookUrl(existingAgentConfig.agent_config.webhook_url);
+    } else if (process.env.PUBLIC_WEBHOOK_URL) {
+      const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+      webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
+    }
 
     const config: Partial<BolnaAgentConfigV2> = {
       agent_config: {} as any,
@@ -1038,41 +1064,45 @@ export class BolnaClient {
       config.agent_config!.agent_type = updates.agentType;
     }
 
-    // Get voiceId from updates - if not provided, try to extract from existing config
-    let voiceId = updates.voiceId || (updates as any).voiceId;
-    let voiceProvider = (updates.voiceProvider && updates.voiceProvider !== 'all')
-      ? updates.voiceProvider
-      : (updates as any).voiceProvider;
+    // Only update synthesizer if voiceId or voiceProvider is explicitly provided in updates
+    const shouldUpdateSynthesizer = updates.voiceId !== undefined || updates.voiceProvider !== undefined;
+    
+    if (shouldUpdateSynthesizer) {
+      // Get voiceId from updates - if not provided, try to extract from existing config
+      let voiceId = updates.voiceId || (updates as any).voiceId;
+      let voiceProvider = (updates.voiceProvider && updates.voiceProvider !== 'all')
+        ? updates.voiceProvider
+        : (updates as any).voiceProvider;
 
-    // If voiceId not in updates, try to get from existing agent config
-    if (!voiceId && existingAgentConfig) {
-      try {
-        const tasks = existingAgentConfig.agent_config?.tasks || [];
-        if (tasks.length > 0) {
-          const synthesizer = tasks[0]?.tools_config?.synthesizer;
-          if (synthesizer?.provider_config?.voice_id) {
-            voiceId = synthesizer.provider_config.voice_id;
-            voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
-          } else if (synthesizer?.provider_config?.voice) {
-            voiceId = synthesizer.provider_config.voice;
-            voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
+      // If voiceId not in updates, try to get from existing agent config
+      if (!voiceId && existingAgentConfig) {
+        try {
+          const tasks = existingAgentConfig.agent_config?.tasks || [];
+          if (tasks.length > 0) {
+            const synthesizer = tasks[0]?.tools_config?.synthesizer;
+            if (synthesizer?.provider_config?.voice_id) {
+              voiceId = synthesizer.provider_config.voice_id;
+              voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
+            } else if (synthesizer?.provider_config?.voice) {
+              voiceId = synthesizer.provider_config.voice;
+              voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
+            }
           }
+        } catch (e) {
+          console.warn(`[Bolna] Could not extract voiceId from existing config: ${(e as Error).message}`);
         }
-      } catch (e) {
-        console.warn(`[Bolna] Could not extract voiceId from existing config: ${(e as Error).message}`);
       }
-    }
 
-    // Default voiceProvider if still not set
-    if (!voiceProvider || voiceProvider === 'all') {
-      voiceProvider = "elevenlabs";
-    }
-
-    // PATCH supports updating synthesizer directly
-    if (voiceId || voiceProvider) {
-      if (!voiceId) {
-        throw new Error("Voice ID is required when updating synthesizer. Please ensure the agent has a voice selected.");
+      // Default voiceProvider if still not set
+      if (!voiceProvider || voiceProvider === 'all') {
+        voiceProvider = "elevenlabs";
       }
+
+      // PATCH supports updating synthesizer directly
+      if (voiceId || voiceProvider) {
+        if (!voiceId) {
+          throw new Error("Voice ID is required when updating synthesizer. Please ensure the agent has a voice selected.");
+        }
 
       let synthesizerConfig: any = null;
       if (voiceProvider === "elevenlabs") {
@@ -1114,7 +1144,8 @@ export class BolnaClient {
         };
       }
 
-      config.agent_config!.synthesizer = synthesizerConfig;
+        config.agent_config!.synthesizer = synthesizerConfig;
+      }
     }
 
     // Build PATCH request - agent_prompts must be at top level per API spec
