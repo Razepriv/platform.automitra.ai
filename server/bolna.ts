@@ -573,7 +573,14 @@ export class BolnaClient {
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
     }
     
-    console.log(`[Bolna] Setting webhook URL for agent ${agentData.name}:`, webhookUrl || 'none');
+    // CRITICAL: Ensure webhook URL is always set for real-time updates
+    if (!webhookUrl) {
+      console.warn(`[Bolna] ⚠️  WARNING: No webhook URL configured! Real-time updates will not work.`);
+      console.warn(`[Bolna] Set PUBLIC_WEBHOOK_URL in .env to enable webhooks.`);
+    } else {
+      console.log(`[Bolna] ✅ Webhook URL configured for agent ${agentData.name}:`, webhookUrl);
+      console.log(`[Bolna] This webhook will receive: status, duration, transcription, recording_url, cost`);
+    }
 
     // Construct API tools if call forwarding is enabled
     let apiTools = null;
