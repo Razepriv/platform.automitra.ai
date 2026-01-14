@@ -127,6 +127,7 @@ export default function Auth({ mode }: AuthProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                   className="bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-purple-500/20"
                 />
               </div>
@@ -139,6 +140,7 @@ export default function Auth({ mode }: AuthProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   className="bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-purple-500/20"
                 />
               </div>

@@ -26,9 +26,9 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -303,8 +303,8 @@ export default function KnowledgeBase() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((category, index) => (
-                <SelectItem key={`category-${index}-${category}`} value={category!}>
+              {categories.map((category) => (
+                <SelectItem key={category} value={category!}>
                   {category}
                 </SelectItem>
               ))}
@@ -587,6 +587,9 @@ export default function KnowledgeBase() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-edit">
           <DialogHeader>
             <DialogTitle data-testid="text-edit-dialog-title">Edit Knowledge Base Item</DialogTitle>
+            <DialogDescription>
+              Update the knowledge base item information and content.
+            </DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">

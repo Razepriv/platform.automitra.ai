@@ -40,19 +40,23 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
-import { type Organization } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
 
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { user } = useAuth();
-  const { data: organization } = useQuery<Organization>({
+  const { data: organization } = useQuery({
     queryKey: ["/api/organization"],
   });
 
   const isActive = (url: string) => {
+    // Exact match for home page
     if (url === "/" && location === "/") return true;
-    if (url !== "/" && location.startsWith(url)) return true;
+    // For other pages, check if location starts with the url
+    // Also ensure we don't match partial segments (e.g., /call shouldn't match /calls)
+    if (url !== "/") {
+      return location === url || location.startsWith(url + "/") || location.startsWith(url + "?");
+    }
     return false;
   };
 
@@ -179,7 +183,7 @@ export function AppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-
+      
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Platform</SidebarGroupLabel>
@@ -237,7 +241,7 @@ export function AppSidebar() {
             ))}
           </SidebarMenu>
         </SidebarGroup>
-
+        
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
@@ -269,13 +273,13 @@ export function AppSidebar() {
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
-                    <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.firstName || "User"} />
+                    <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.username} />
                     <AvatarFallback className="rounded-lg">
-                      {(user?.firstName || "U").charAt(0).toUpperCase()}
+                      {user?.username?.charAt(0).toUpperCase() || "U"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">{user?.firstName || "User"}</span>
+                    <span className="truncate font-semibold">{user?.username || "User"}</span>
                     <span className="truncate text-xs">{user?.email || "user@example.com"}</span>
                   </div>
                   <ChevronDown className="ml-auto size-4" />
@@ -290,13 +294,13 @@ export function AppSidebar() {
                 <DropdownMenuLabel className="p-0 font-normal">
                   <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                     <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.firstName || "User"} />
+                      <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.username} />
                       <AvatarFallback className="rounded-lg">
-                        {(user?.firstName || "U").charAt(0).toUpperCase()}
+                        {user?.username?.charAt(0).toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-semibold">{user?.firstName || "User"}</span>
+                      <span className="truncate font-semibold">{user?.username || "User"}</span>
                       <span className="truncate text-xs">{user?.email || "user@example.com"}</span>
                     </div>
                   </div>

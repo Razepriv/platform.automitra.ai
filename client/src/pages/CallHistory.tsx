@@ -22,9 +22,9 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -39,14 +39,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Search,
-  Download,
-  Phone,
-  Clock,
-  PhoneCall,
-  Loader2,
-  Plus,
+import { 
+  Search, 
+  Download, 
+  Phone, 
+  Clock, 
+  PhoneCall, 
+  Loader2, 
+  Plus, 
   PhoneOff,
   PhoneForwarded,
   RefreshCw,
@@ -60,7 +60,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useWebSocketEvent } from "@/lib/useWebSocket";
-import { useAuth } from "@/hooks/useAuth";
 import type { Call, AiAgent, PhoneNumber } from "@shared/schema";
 
 function formatDuration(seconds: number | null): string {
@@ -129,7 +128,7 @@ export default function CallHistory() {
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = require("@/hooks/useAuth").useAuth();
 
   // Auto-open dialog from Quick Actions
   useEffect(() => {
@@ -138,8 +137,8 @@ export default function CallHistory() {
       setIsNewCallDialogOpen(true);
       // Clean URL: remove action param while preserving base path
       params.delete('action');
-      const newUrl = params.toString() ?
-        `${window.location.pathname}?${params.toString()}` :
+      const newUrl = params.toString() ? 
+        `${window.location.pathname}?${params.toString()}` : 
         window.location.pathname;
       window.history.replaceState(null, '', newUrl);
     }
@@ -152,53 +151,34 @@ export default function CallHistory() {
       return res.json();
     },
     enabled: !!user,
-    refetchInterval: 10000, // Auto-refresh every 10 seconds to catch new calls faster
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
   // Real-time call updates via WebSocket
-  // Real-time phone number updates
-  useWebSocketEvent('phone:created', useCallback(() => {
-    console.log('[CallHistory] Received phone:created event');
-    queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
-  }, []));
-
-  useWebSocketEvent('phone:updated', useCallback(() => {
-    console.log('[CallHistory] Received phone:updated event');
-    queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
-  }, []));
-
   useWebSocketEvent<Call>('call:created', useCallback((newCall: Call) => {
     console.log('[CallHistory] Received call:created', newCall);
-    queryClient.setQueryData(['/api/calls', user?.id], (oldData: Call[] = []) => {
-      // Only add if not already in the list
-      if (oldData.some(c => c.id === newCall.id)) {
-        return oldData;
-      }
+    queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
       return [newCall, ...oldData];
     });
-    // Also invalidate to ensure we get the latest data from server
-    queryClient.invalidateQueries({ queryKey: ['/api/calls', user?.id] });
     toast({
       title: "New call initiated",
       description: `Call to ${newCall.contactName || newCall.contactPhone} has been started.`,
     });
-  }, [toast, user?.id]));
+  }, [toast]));
 
   useWebSocketEvent<Call>('call:updated', useCallback((updatedCall: Call) => {
     console.log('[CallHistory] Received call:updated', updatedCall);
-    queryClient.setQueryData(['/api/calls', user?.id], (oldData: Call[] = []) => {
-      return oldData.map(call =>
+    queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
+      return oldData.map(call => 
         call.id === updatedCall.id ? updatedCall : call
       );
     });
-    // Also invalidate to ensure we get the latest data from server
-    queryClient.invalidateQueries({ queryKey: ['/api/calls', user?.id] });
-
+    
     // Update selected call if it's the one being viewed
-    setSelectedCall(current =>
+    setSelectedCall(current => 
       current && current.id === updatedCall.id ? updatedCall : current
     );
-
+    
     // Show notification for completed calls
     if (updatedCall.status === 'completed') {
       toast({
@@ -235,10 +215,8 @@ export default function CallHistory() {
       const response = await apiRequest("POST", "/api/calls/initiate", data);
       return response;
     },
-    onSuccess: async () => {
-      // Invalidate and refetch to ensure we get the new call immediately
-      await queryClient.invalidateQueries({ queryKey: ["/api/calls", user?.id] });
-      await refetchCalls();
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calls"] });
       toast({
         title: "Call initiated",
         description: "Your call has been successfully initiated.",
@@ -284,7 +262,7 @@ export default function CallHistory() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
+    
     toast({
       title: "Calls exported",
       description: `${filteredCalls.length} calls exported to CSV successfully.`,
@@ -314,7 +292,7 @@ export default function CallHistory() {
 
   const filteredCalls = calls.filter((call) => {
     // Only show calls made by the logged-in user
-    // if (call.userId !== user?.id) return false; // userId not on Call schema, API handles filtering
+    if (call.userId !== user?.id) return false;
     const matchesSearch =
       !searchQuery ||
       call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -333,7 +311,7 @@ export default function CallHistory() {
     const failedCalls = calls.filter(c => ['failed', 'cancelled'].includes(c.status)).length;
     const totalDuration = calls.reduce((sum, c) => sum + (c.duration || 0), 0);
     const avgDuration = completedCalls > 0 ? totalDuration / completedCalls : 0;
-
+    
     // Calculate total cost
     const totalCost = calls.reduce((sum, c) => {
       const duration = c.duration || 0;
@@ -357,8 +335,8 @@ export default function CallHistory() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold" data-testid="text-page-title">Call History</h1>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
+          <Button 
+            variant="outline" 
             onClick={exportCallsToCSV}
             disabled={filteredCalls.length === 0}
             data-testid="button-export"
@@ -366,8 +344,8 @@ export default function CallHistory() {
             <Download className="w-4 h-4 mr-2" />
             Export ({filteredCalls.length})
           </Button>
-          <Button
-            variant="outline"
+          <Button 
+            variant="outline" 
             onClick={() => refetchCalls()}
             data-testid="button-refresh"
           >
@@ -520,8 +498,8 @@ export default function CallHistory() {
                       {call.startedAt
                         ? format(new Date(call.startedAt), "MMM d, yyyy h:mm a")
                         : call.scheduledAt
-                          ? format(new Date(call.scheduledAt), "MMM d, yyyy h:mm a")
-                          : "—"}
+                        ? format(new Date(call.scheduledAt), "MMM d, yyyy h:mm a")
+                        : "—"}
                     </TableCell>
                     <TableCell data-testid={`text-contact-${call.id}`}>
                       {call.contactName || "—"}
@@ -704,6 +682,9 @@ export default function CallHistory() {
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Call Details</DialogTitle>
+            <DialogDescription>
+              View detailed information about this call including Bolna metrics
+            </DialogDescription>
           </DialogHeader>
           {selectedCall && (
             <BolnaCallDetails callId={selectedCall.id} call={selectedCall} />
@@ -715,221 +696,214 @@ export default function CallHistory() {
 }
 
 // Separate component to fetch Bolna details
-interface BolnaDetails {
-  status?: string;
-  duration?: number;
-  transcript?: string;
-  recording_url?: string;
-}
-
 function BolnaCallDetails({ callId, call }: { callId: string; call: Call }) {
-  const { data: bolnaDetails, isLoading } = useQuery<BolnaDetails>({
+  const { data: bolnaDetails, isLoading } = useQuery({
     queryKey: [`/api/calls/${callId}/bolna-details`],
     enabled: !!call.bolnaCallId,
   });
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Contact Name</h4>
-          <p data-testid="dialog-contact-name">{call.contactName || "—"}</p>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Phone Number</h4>
-          <p data-testid="dialog-phone">{call.contactPhone || "—"}</p>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Status</h4>
-          <Badge variant={getStatusBadgeVariant(call.status)} data-testid="dialog-status" className="flex items-center gap-1 w-fit">
-            {getStatusIcon(call.status)}
-            {call.status.replace(/_/g, ' ').replace(/-/g, ' ')}
-          </Badge>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Duration</h4>
-          <p data-testid="dialog-duration">{formatDuration(call.duration)}</p>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Direction</h4>
-          <p data-testid="dialog-direction">{call.direction}</p>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Call Type</h4>
-          <p data-testid="dialog-call-type">{call.callType}</p>
-        </div>
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Cost</h4>
-          <p data-testid="dialog-cost">
-            {(() => {
-              const duration = call.duration || 0;
-              const costPerMin = (call.exotelCostPerMinute || 0) + (call.bolnaCostPerMinute || 0);
-              const totalCost = (duration / 60) * costPerMin;
-              if (totalCost === 0) return "—";
-              return (
-                <span className="font-medium">
-                  ${totalCost.toFixed(4)}
-                  <span className="text-xs text-muted-foreground ml-1">
-                    (${costPerMin.toFixed(4)}/min)
-                  </span>
-                </span>
-              );
-            })()}
-          </p>
-        </div>
-        {call.startedAt && (
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Started At</h4>
-            <p data-testid="dialog-started-at">
-              {format(new Date(call.startedAt), "MMM d, yyyy h:mm:ss a")}
-            </p>
-          </div>
-        )}
-        {call.endedAt && (
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Ended At</h4>
-            <p data-testid="dialog-ended-at">
-              {format(new Date(call.endedAt), "MMM d, yyyy h:mm:ss a")}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {call.outcome && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Outcome</h4>
-          <p data-testid="dialog-outcome">{call.outcome}</p>
-        </div>
-      )}
-
-      {call.sentiment && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Sentiment</h4>
-          <p data-testid="dialog-sentiment">{call.sentiment}</p>
-        </div>
-      )}
-
-      {/* Transcript */}
-      {isLoading && call.bolnaCallId && (
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm text-muted-foreground">Loading transcript and recording...</span>
-        </div>
-      )}
-
-      {bolnaDetails?.transcript && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Transcript</h4>
-          <Card>
-            <CardContent className="p-4">
-              <p className="whitespace-pre-wrap text-sm" data-testid="dialog-bolna-transcript">
-                {bolnaDetails.transcript}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Recording */}
-      {bolnaDetails?.recording_url && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Recording</h4>
-          <Card>
-            <CardContent className="p-4">
-              <audio controls className="w-full" src={bolnaDetails.recording_url}>
-                Your browser does not support the audio element.
-              </audio>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => window.open(bolnaDetails.recording_url, '_blank')}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download Recording
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Fallback to local transcript */}
-      {!bolnaDetails?.transcript && call.transcription && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Transcript</h4>
-          <Card>
-            <CardContent className="p-4">
-              <p className="whitespace-pre-wrap text-sm" data-testid="dialog-transcript">
-                {call.transcription}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {call.aiSummary && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">AI Summary</h4>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm" data-testid="dialog-ai-summary">
-                {call.aiSummary}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {call.notes && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Notes</h4>
-          <p data-testid="dialog-notes">{call.notes}</p>
-        </div>
-      )}
-
-      {call.recordingUrl && (
-        <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-2">Call Recording</h4>
-          <Card>
-            <CardContent className="p-4 space-y-3">
-              <audio
-                controls
-                className="w-full"
-                data-testid="audio-player"
-                preload="metadata"
-              >
-                <source src={call.recordingUrl} type="audio/mpeg" />
-                <source src={call.recordingUrl} type="audio/wav" />
-                Your browser does not support the audio element.
-              </audio>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  data-testid="button-download-recording"
-                >
-                  <a href={call.recordingUrl} download>
-                    <Download className="w-4 h-4 mr-2" />
-                    Download Recording
-                  </a>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  data-testid="button-open-recording"
-                >
-                  <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer">
-                    <Phone className="w-4 h-4 mr-2" />
-                    Open in New Tab
-                  </a>
-                </Button>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Contact Name</h4>
+                  <p data-testid="dialog-contact-name">{call.contactName || "—"}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Phone Number</h4>
+                  <p data-testid="dialog-phone">{call.contactPhone || "—"}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Status</h4>
+                  <Badge variant={getStatusBadgeVariant(call.status)} data-testid="dialog-status" className="flex items-center gap-1 w-fit">
+                    {getStatusIcon(call.status)}
+                    {call.status.replace(/_/g, ' ').replace(/-/g, ' ')}
+                  </Badge>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Duration</h4>
+                  <p data-testid="dialog-duration">{formatDuration(call.duration)}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Direction</h4>
+                  <p data-testid="dialog-direction">{call.direction}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Call Type</h4>
+                  <p data-testid="dialog-call-type">{call.callType}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Cost</h4>
+                  <p data-testid="dialog-cost">
+                    {(() => {
+                      const duration = call.duration || 0;
+                      const costPerMin = (call.exotelCostPerMinute || 0) + (call.bolnaCostPerMinute || 0);
+                      const totalCost = (duration / 60) * costPerMin;
+                      if (totalCost === 0) return "—";
+                      return (
+                        <span className="font-medium">
+                          ${totalCost.toFixed(4)}
+                          <span className="text-xs text-muted-foreground ml-1">
+                            (${costPerMin.toFixed(4)}/min)
+                          </span>
+                        </span>
+                      );
+                    })()}
+                  </p>
+                </div>
+                {call.startedAt && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-1">Started At</h4>
+                    <p data-testid="dialog-started-at">
+                      {format(new Date(call.startedAt), "MMM d, yyyy h:mm:ss a")}
+                    </p>
+                  </div>
+                )}
+                {call.endedAt && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-1">Ended At</h4>
+                    <p data-testid="dialog-ended-at">
+                      {format(new Date(call.endedAt), "MMM d, yyyy h:mm:ss a")}
+                    </p>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+
+              {call.outcome && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Outcome</h4>
+                  <p data-testid="dialog-outcome">{call.outcome}</p>
+                </div>
+              )}
+
+              {call.sentiment && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Sentiment</h4>
+                  <p data-testid="dialog-sentiment">{call.sentiment}</p>
+                </div>
+              )}
+
+              {/* Transcript */}
+              {isLoading && call.bolnaCallId && (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Loading transcript and recording...</span>
+                </div>
+              )}
+
+              {bolnaDetails?.transcript && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Transcript</h4>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="whitespace-pre-wrap text-sm" data-testid="dialog-bolna-transcript">
+                        {bolnaDetails.transcript}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Recording */}
+              {bolnaDetails?.recording_url && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Recording</h4>
+                  <Card>
+                    <CardContent className="p-4">
+                      <audio controls className="w-full" src={bolnaDetails.recording_url}>
+                        Your browser does not support the audio element.
+                      </audio>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-2"
+                        onClick={() => window.open(bolnaDetails.recording_url, '_blank')}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Recording
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Fallback to local transcript */}
+              {!bolnaDetails?.transcript && call.transcription && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Transcript</h4>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="whitespace-pre-wrap text-sm" data-testid="dialog-transcript">
+                        {call.transcription}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {call.aiSummary && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">AI Summary</h4>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-sm" data-testid="dialog-ai-summary">
+                        {call.aiSummary}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {call.notes && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Notes</h4>
+                  <p data-testid="dialog-notes">{call.notes}</p>
+                </div>
+              )}
+
+              {call.recordingUrl && (
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Call Recording</h4>
+                  <Card>
+                    <CardContent className="p-4 space-y-3">
+                      <audio 
+                        controls 
+                        className="w-full" 
+                        data-testid="audio-player"
+                        preload="metadata"
+                      >
+                        <source src={call.recordingUrl} type="audio/mpeg" />
+                        <source src={call.recordingUrl} type="audio/wav" />
+                        Your browser does not support the audio element.
+                      </audio>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          asChild 
+                          data-testid="button-download-recording"
+                        >
+                          <a href={call.recordingUrl} download>
+                            <Download className="w-4 h-4 mr-2" />
+                            Download Recording
+                          </a>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          asChild 
+                          data-testid="button-open-recording"
+                        >
+                          <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer">
+                            <Phone className="w-4 h-4 mr-2" />
+                            Open in New Tab
+                          </a>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
     </div>
   );
 }

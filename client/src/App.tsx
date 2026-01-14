@@ -28,7 +28,6 @@ import KnowledgeBase from "@/pages/KnowledgeBase";
 import Analytics from "@/pages/Analytics";
 import Billing from "@/pages/Billing";
 import Settings from "@/pages/Settings";
-import CampaignsPage from "@/pages/campaigns/index";
 
 function UnauthenticatedRouter() {
   return (
@@ -42,14 +41,13 @@ function UnauthenticatedRouter() {
       <Route path="/">
         <Auth mode="login" />
       </Route>
-      <Route>
-        <Auth mode="login" />
-      </Route>
+      <Route component={Auth} />
     </Switch>
   );
 }
 
 function AuthenticatedRouter() {
+  const CampaignsPage = require("@/pages/campaigns/index").default;
   return (
     <Switch>
       <Route path="/" component={Dashboard} />

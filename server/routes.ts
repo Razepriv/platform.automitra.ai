@@ -1357,13 +1357,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/knowledge-base', isAuthenticated, async (req: any, res) => {
     try {
       const { agentId } = req.query;
-      const user = req.user;
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
       let kbs;
       if (agentId) {
-        kbs = await storage.getKnowledgeBasesByAgent(agentId, user.organizationId);
+        kbs = await storage.getKnowledgeBaseByAgent(agentId as string, user.organizationId);
       } else {
-        kbs = await storage.getKnowledgeBasesByOrganization(user.organizationId);
+        kbs = await storage.getKnowledgeBase(user.organizationId);
       }
 
       res.json(kbs);
@@ -1376,7 +1380,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get knowledge base details
   app.get('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const kb = await storage.getKnowledgeBase(req.params.id, req.user.organizationId);
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const kb = await storage.getKnowledgeBaseItem(req.params.id, user.organizationId);
 
       if (!kb) {
         return res.status(404).json({ message: "Knowledge base not found" });
@@ -1436,15 +1445,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/knowledge-base/agent/:agentId/sync-to-bolna', isAuthenticated, async (req: any, res) => {
     try {
       const { agentId } = req.params;
-      const user = req.user;
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-      const agent = await storage.getAiAgent(agentId, user.organizationId);
+      const agent = await storage.getAIAgent(agentId, user.organizationId);
       if (!agent) {
         return res.status(404).json({ message: "Agent not found" });
       }
 
       // Get all knowledge bases for this agent
-      const kbs = await storage.getKnowledgeBasesByAgent(agentId, user.organizationId);
+      const kbs = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
 
       if (kbs.length === 0) {
         return res.json({ 
