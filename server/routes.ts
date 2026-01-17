@@ -10,6 +10,7 @@ import { generateAISummary, analyzeLeadQualification, generateMeetingSummary, ma
 import { bolnaClient } from "./bolna";
 import { exotelClient } from "./exotel";
 import { startCallPolling, stopCallPolling, stopAllPolling, getPollingStats } from "./callPoller";
+import { getAgentTemplatesForUser, createAgentTemplate, updateAgentTemplate, deleteAgentTemplate } from "./agentTemplates";
 import type { InsertLead, InsertChannelPartner, InsertCampaign, InsertCall, InsertVisit, InsertAiAgent, CreateAiAgentInput, UpdateAiAgentInput, InsertKnowledgeBase, CreateKnowledgeBaseInput, UpdateKnowledgeBaseInput, InsertPhoneNumber } from "@shared/schema";
 import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
 
@@ -17,7 +18,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
     // Agent Template routes (user-specific)
-    const { getAgentTemplatesForUser, createAgentTemplate, updateAgentTemplate, deleteAgentTemplate } = require('./agentTemplates');
 
     app.get('/api/agent-templates', isAuthenticated, async (req: any, res) => {
       try {
