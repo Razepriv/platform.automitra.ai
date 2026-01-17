@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Table,
   TableBody,
@@ -128,7 +129,7 @@ export default function CallHistory() {
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isNewCallDialogOpen, setIsNewCallDialogOpen] = useState(false);
   const { toast } = useToast();
-  const { user } = require("@/hooks/useAuth").useAuth();
+  const { user } = useAuth();
 
   // Auto-open dialog from Quick Actions
   useEffect(() => {
