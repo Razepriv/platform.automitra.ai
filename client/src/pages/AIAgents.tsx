@@ -213,7 +213,7 @@ export default function AIAgents() {
       setVoiceProviderFilter('all');
       // Don't set voiceProvider to 'all' - keep the default 'elevenlabs'
     }
-  }, [isDialogOpen, dialogMode, form]);
+  }, [isDialogOpen, dialogMode]);
 
   const createMutation = useMutation({
     mutationFn: async (data: AgentFormValues) => {
