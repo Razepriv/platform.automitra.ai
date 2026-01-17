@@ -812,16 +812,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updates: Partial<InsertCall> = {
         status: normalizedStatus,
-        duration: callDuration || call.duration,
-        transcription: transcript || call.transcription,
-        recordingUrl: telephony_data?.recording_url || recording_url || call.recordingUrl,
-        endedAt: normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'cancelled'
-          ? new Date()
-          : call.endedAt,
       };
 
-      // Add Bolna cost information if available
-      if (total_cost !== undefined) {
+      // Only update duration if we have a new value and it's greater than current
+      if (callDuration !== undefined && callDuration > 0) {
+        if (!call.duration || callDuration > call.duration) {
+          updates.duration = callDuration;
+        }
+      }
+
+      // Only update transcription if we have new content
+      if (transcript && transcript.length > 0 && !call.transcription) {
+        updates.transcription = transcript;
+      }
+
+      // Only update recording URL if we have a new URL
+      const newRecordingUrl = telephony_data?.recording_url || recording_url;
+      if (newRecordingUrl && !call.recordingUrl) {
+        updates.recordingUrl = newRecordingUrl;
+      }
+
+      // Only set endedAt if call is truly ending and we haven't already set it
+      if (
+        (normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'cancelled') &&
+        !call.endedAt
+      ) {
+        updates.endedAt = new Date();
+      }
+
+      // Add Bolna cost information if available and not already set
+      if (total_cost !== undefined && !call.bolnaCostPerMinute) {
         updates.bolnaCostPerMinute = Number(total_cost);
         console.log(`[Bolna Webhook] 💰 Cost data received: $${total_cost}`);
       }
