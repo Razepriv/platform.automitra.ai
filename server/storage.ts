@@ -452,10 +452,173 @@ export class DatabaseStorage implements IStorage {
   }
   async getUsageTracking(organizationId: string, daysAgo?: number): Promise<UsageTracking[]> { throw new Error('Not implemented'); }
   async createUsageTracking(usage: InsertUsageTracking): Promise<UsageTracking> { throw new Error('Not implemented'); }
-  async getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics> { throw new Error('Not implemented'); }
-  async getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]> { throw new Error('Not implemented'); }
-  async getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]> { throw new Error('Not implemented'); }
-  async getBillingMetrics(organizationId: string): Promise<BillingMetrics> { throw new Error('Not implemented'); }
+  
+  async getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics> {
+    const dateThreshold = new Date();
+    dateThreshold.setDate(dateThreshold.getDate() - daysAgo);
+
+    const allCalls = await db
+      .select()
+      .from(calls)
+      .where(and(
+        eq(calls.organizationId, organizationId),
+        gte(calls.createdAt, dateThreshold)
+      ));
+
+    const allLeads = await db
+      .select()
+      .from(leads)
+      .where(and(
+        eq(leads.organizationId, organizationId),
+        gte(leads.createdAt, dateThreshold)
+      ));
+
+    const totalCalls = allCalls.length;
+    const completedCalls = allCalls.filter((c: any) => c.status === 'completed').length;
+    const successfulCalls = allCalls.filter((c: any) => c.outcome === 'successful').length;
+    const totalLeads = allLeads.length;
+    const convertedLeads = allLeads.filter((l: any) => l.status === 'converted').length;
+
+    return {
+      totalCalls,
+      totalLeads,
+      responseRate: totalCalls > 0 ? (completedCalls / totalCalls) * 100 : 0,
+      conversionRate: totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0,
+    };
+  }
+
+  async getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]> {
+    const dateThreshold = new Date();
+    dateThreshold.setDate(dateThreshold.getDate() - daysAgo);
+
+    const allCalls = await db
+      .select()
+      .from(calls)
+      .where(and(
+        eq(calls.organizationId, organizationId),
+        gte(calls.createdAt, dateThreshold)
+      ));
+
+    // Group by date
+    const metricsByDate = new Map<string, { calls: number; duration: number; successful: number }>();
+    
+    allCalls.forEach((call: any) => {
+      const date = call.createdAt ? call.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const existing = metricsByDate.get(date) || { calls: 0, duration: 0, successful: 0 };
+      
+      existing.calls++;
+      existing.duration += call.duration || 0;
+      if (call.status === 'completed') existing.successful++;
+      
+      metricsByDate.set(date, existing);
+    });
+
+    return Array.from(metricsByDate.entries()).map(([date, metrics]) => ({
+      date,
+      ...metrics,
+    }));
+  }
+
+  async getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]> {
+    const dateThreshold = new Date();
+    dateThreshold.setDate(dateThreshold.getDate() - daysAgo);
+
+    const agents = await db
+      .select()
+      .from(aiAgents)
+      .where(eq(aiAgents.organizationId, organizationId));
+
+    const performance: AgentPerformance[] = [];
+
+    for (const agent of agents) {
+      const agentCalls = await db
+        .select()
+        .from(calls)
+        .where(and(
+          eq(calls.organizationId, organizationId),
+          eq(calls.agentId, agent.id),
+          gte(calls.createdAt, dateThreshold)
+        ));
+
+      const totalCalls = agentCalls.length;
+      const successfulCalls = agentCalls.filter((c: any) => c.status === 'completed').length;
+      const totalDuration = agentCalls.reduce((sum: number, c: any) => sum + (c.duration || 0), 0);
+      const averageDuration = totalCalls > 0 ? totalDuration / totalCalls : 0;
+      const successRate = totalCalls > 0 ? (successfulCalls / totalCalls) * 100 : 0;
+
+      performance.push({
+        agentId: agent.id,
+        agentName: agent.name,
+        totalCalls,
+        successfulCalls,
+        averageDuration,
+        successRate,
+        avgRating: 0, // TODO: Implement ratings if needed
+      });
+    }
+
+    return performance;
+  }
+
+  async getBillingMetrics(organizationId: string): Promise<BillingMetrics> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    const currentMonthCalls = await db
+      .select()
+      .from(calls)
+      .where(and(
+        eq(calls.organizationId, organizationId),
+        gte(calls.createdAt, startOfMonth)
+      ));
+
+    const prevMonthCalls = await db
+      .select()
+      .from(calls)
+      .where(and(
+        eq(calls.organizationId, organizationId),
+        gte(calls.createdAt, startOfPrevMonth),
+        sql`${calls.createdAt} <= ${endOfPrevMonth}`
+      ));
+
+    const calculateCosts = (callsList: any[]) => {
+      let totalMinutes = 0;
+      let exotelCost = 0;
+      let bolnaCost = 0;
+
+      callsList.forEach((call: any) => {
+        const minutes = (call.duration || 0) / 60;
+        totalMinutes += minutes;
+        exotelCost += (call.exotelCostPerMinute || 0) * minutes;
+        bolnaCost += (call.bolnaCostPerMinute || 0) * minutes;
+      });
+
+      const markupCost = (exotelCost + bolnaCost) * 0.2; // 20% markup
+      const totalCost = exotelCost + bolnaCost + markupCost;
+
+      return { totalMinutes, exotelCost, bolnaCost, markupCost, totalCost };
+    };
+
+    const currentMetrics = calculateCosts(currentMonthCalls);
+    const prevMetrics = calculateCosts(prevMonthCalls);
+
+    return {
+      currentMonth: {
+        totalMinutes: currentMetrics.totalMinutes,
+        totalCalls: currentMonthCalls.length,
+        exotelCost: currentMetrics.exotelCost,
+        bolnaCost: currentMetrics.bolnaCost,
+        markupCost: currentMetrics.markupCost,
+        totalCost: currentMetrics.totalCost,
+      },
+      previousMonth: {
+        totalMinutes: prevMetrics.totalMinutes,
+        totalCost: prevMetrics.totalCost,
+      },
+    };
+  }
 }
 
 // Export a singleton instance for use throughout the app
