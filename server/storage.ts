@@ -359,8 +359,10 @@ export class DatabaseStorage implements IStorage {
 
   // AI Agent operations
   async getAIAgents(organizationId: string): Promise<AiAgent[]> {
-    // Return all agents for all organizations (multi-tenant)
-    return await db.select().from(aiAgents).orderBy(desc(aiAgents.createdAt));
+    // Return agents only for the specified organization
+    return await db.select().from(aiAgents)
+      .where(eq(aiAgents.organizationId, organizationId))
+      .orderBy(desc(aiAgents.createdAt));
   }
 
   async getAIAgent(id: string, organizationId: string): Promise<AiAgent | undefined> {
