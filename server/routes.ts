@@ -1876,7 +1876,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
         organizationId: user.organizationId,
       };
       
-      const item = await storage.createKnowledgeBase(knowledgeData);
+      let item: any;
+      
+      // If content is provided and contentType is text/markdown/json, upload to Bolna
+      if (knowledgeData.content && ['text', 'markdown', 'json'].includes(knowledgeData.contentType || 'text')) {
+        try {
+          console.log(`[KB Create] Uploading text-based KB to Bolna: ${knowledgeData.title}`);
+          
+          // Create a text document from the knowledge base content
+          const textContent = `
+${knowledgeData.title || 'Knowledge Base Document'}
+${'='.repeat((knowledgeData.title || '').length + 25)}
+
+${knowledgeData.description ? `Description: ${knowledgeData.description}\n\n` : ''}
+${knowledgeData.category ? `Category: ${knowledgeData.category}\n\n` : ''}
+
+Content:
+--------
+${knowledgeData.content}
+
+${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
+`;
+          
+          // Convert text to PDF buffer
+          const PDFDocument = (await import('pdfkit')).default;
+          const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+            const doc = new PDFDocument();
+            const chunks: Buffer[] = [];
+            
+            doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.on('error', reject);
+            
+            // Add content to PDF
+            doc.fontSize(16).text(knowledgeData.title || 'Knowledge Base Document', { underline: true });
+            doc.moveDown();
+            doc.fontSize(12).text(textContent);
+            doc.end();
+          });
+          
+          // Upload to Bolna
+          const bolnaKB = await bolnaClient.createKnowledgeBase(pdfBuffer, {
+            fileName: `${(knowledgeData.title || 'kb').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+            chunk_size: 512,
+            similarity_top_k: 5,
+            overlapping: 20,
+          });
+          
+          console.log(`[KB Create] ✅ Bolna KB created with RAG ID: ${bolnaKB.rag_id}`);
+          
+          // Store with Bolna reference
+          knowledgeData.externalId = bolnaKB.rag_id;
+          knowledgeData.metadata = {
+            ...knowledgeData.metadata,
+            bolnaRagId: bolnaKB.rag_id,
+            uploadedToBolna: true,
+            uploadedAt: new Date().toISOString(),
+          };
+          
+          // Update agent if specified
+          if (knowledgeData.agentId && bolnaKB.rag_id) {
+            const agent = await storage.getAiAgent(knowledgeData.agentId, user.organizationId);
+            if (agent) {
+              const existingKBIds = agent.knowledgeBaseIds || [];
+              const updatedKBIds = [...new Set([...existingKBIds, bolnaKB.rag_id])];
+              
+              await storage.updateAiAgent(knowledgeData.agentId, user.organizationId, {
+                knowledgeBaseIds: updatedKBIds,
+              });
+              
+              console.log(`[KB Create] ✅ Agent ${knowledgeData.agentId} updated with KB: ${bolnaKB.rag_id}`);
+            }
+          }
+        } catch (bolnaError) {
+          console.error('[KB Create] Failed to upload to Bolna:', bolnaError);
+          // Continue creating KB in platform even if Bolna upload fails
+          knowledgeData.metadata = {
+            ...knowledgeData.metadata,
+            bolnaUploadError: (bolnaError as Error).message,
+            bolnaUploadAttempted: true,
+            uploadedToBolna: false,
+          };
+        }
+      }
+      
+      item = await storage.createKnowledgeBase(knowledgeData);
       res.json(item);
     } catch (error) {
       console.error("Error creating knowledge base item:", error);
