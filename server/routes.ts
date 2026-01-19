@@ -1997,6 +1997,93 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
     }
   });
 
+  // Sync/Resync knowledge base to Bolna
+  app.post('/api/knowledge-base/:id/sync-to-bolna', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const kb = await storage.getKnowledgeBaseItem(req.params.id, user.organizationId);
+      if (!kb) {
+        return res.status(404).json({ message: "Knowledge base item not found" });
+      }
+
+      console.log(`[KB Sync] Syncing KB ${kb.id} to Bolna...`);
+
+      // Prepare content
+      const content = kb.content || kb.description || `Knowledge Base: ${kb.title}`;
+      const title = kb.title || 'Untitled Knowledge Base';
+
+      // Convert to PDF
+      const PDFDocument = (await import('pdfkit')).default;
+      const pdfBuffer: Buffer = await new Promise((resolve, reject) => {
+        const doc = new PDFDocument();
+        const chunks: Buffer[] = [];
+
+        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+
+        doc.fontSize(20).text(title, { align: 'center' });
+        doc.moveDown();
+        doc.fontSize(12).text(content, { align: 'left', lineGap: 5 });
+        doc.end();
+      });
+
+      // Upload to Bolna
+      const bolnaKB = await bolnaClient.createKnowledgeBase(pdfBuffer, {
+        fileName: `${title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+        chunk_size: 512,
+        similarity_top_k: 5,
+        overlapping: 20,
+      });
+
+      console.log(`[KB Sync] ✅ Bolna KB created with RAG ID: ${bolnaKB.rag_id}`);
+
+      // Update platform KB
+      const updated = await storage.updateKnowledgeBase(req.params.id, user.organizationId, {
+        externalId: bolnaKB.rag_id,
+        metadata: {
+          ...(kb.metadata as any || {}),
+          bolnaRagId: bolnaKB.rag_id,
+          syncedAt: new Date().toISOString(),
+          lastSyncedAt: new Date().toISOString(),
+        }
+      });
+
+      // Update agent if linked
+      if (kb.agentId) {
+        const agent = await storage.getAiAgent(kb.agentId, user.organizationId);
+        if (agent) {
+          const existingKBIds = agent.knowledgeBaseIds || [];
+          if (!existingKBIds.includes(bolnaKB.rag_id)) {
+            const updatedKBIds = [...existingKBIds, bolnaKB.rag_id];
+            await storage.updateAiAgent(kb.agentId, user.organizationId, {
+              knowledgeBaseIds: updatedKBIds,
+            });
+            console.log(`[KB Sync] ✅ Updated agent ${agent.name} with KB ID`);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: "Knowledge base synced to Bolna successfully",
+        knowledgeBase: updated,
+        bolnaRagId: bolnaKB.rag_id,
+      });
+    } catch (error) {
+      console.error("Error syncing knowledge base to Bolna:", error);
+      res.status(500).json({
+        message: "Failed to sync knowledge base to Bolna",
+        error: (error as Error).message
+      });
+    }
+  });
+
   app.delete('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

@@ -42,7 +42,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, FileText, Trash2, Edit, BookOpen, X } from "lucide-react";
+import { Plus, Search, FileText, Trash2, Edit, BookOpen, X, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { KnowledgeBase as KnowledgeBaseType, AiAgent } from "@shared/schema";
@@ -197,6 +197,30 @@ export default function KnowledgeBase() {
     },
   });
 
+  const syncToBolnaMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("POST", `/api/knowledge-base/${id}/sync-to-bolna`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/knowledge-base"] });
+      toast({
+        title: "Knowledge base synced",
+        description: "Successfully synced to Bolna AI system.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Sync failed",
+        description: error?.message || "Failed to sync to Bolna. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSyncToBolna = (id: string) => {
+    syncToBolnaMutation.mutate(id);
+  };
+
   const handleOpenCreateDialog = () => {
     createForm.reset();
     setTagInput("");
@@ -340,7 +364,14 @@ export default function KnowledgeBase() {
               <CardHeader>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
-                    <CardTitle className="text-lg" data-testid={`text-title-${item.id}`}>{item.title}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg" data-testid={`text-title-${item.id}`}>{item.title}</CardTitle>
+                      {item.externalId && (
+                        <Badge variant="secondary" className="text-xs">
+                          Synced
+                        </Badge>
+                      )}
+                    </div>
                     {item.category && (
                       <Badge variant="outline" className="mt-2" data-testid={`badge-category-${item.id}`}>
                         {item.category}
@@ -370,6 +401,17 @@ export default function KnowledgeBase() {
                     </div>
                   )}
                   <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSyncToBolna(item.id)}
+                      disabled={syncToBolnaMutation.isPending}
+                      data-testid={`button-sync-${item.id}`}
+                      title={item.externalId ? "Resync to Bolna" : "Sync to Bolna"}
+                    >
+                      <RefreshCw className={`w-3 h-3 mr-1 ${syncToBolnaMutation.isPending ? 'animate-spin' : ''}`} />
+                      {item.externalId ? "Resync" : "Sync"}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
