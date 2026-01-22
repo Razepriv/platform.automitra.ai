@@ -228,7 +228,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               ) : (
                                 phoneNumbers.map((n) => (
                                   <SelectItem key={n.id} value={n.id}>
-                                    {n.number}
+                                    <span className="font-mono">{n.number}</span>
                                   </SelectItem>
                                 ))
                               )}
@@ -564,12 +564,125 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       name="synthesizerBufferSize"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Buffer Size</FormLabel>
+                          <div className="flex items-center justify-between">
+                            <FormLabel>Buffer Size</FormLabel>
+                            <span className="text-sm text-muted-foreground">{field.value || 400}</span>
+                          </div>
                           <FormControl>
-                            <Input {...field} type="number" min="50" max="500" />
+                            <Slider
+                              min={50}
+                              max={500}
+                              step={50}
+                              value={[field.value || 400]}
+                              onValueChange={(vals) => field.onChange(vals[0])}
+                            />
                           </FormControl>
                           <FormDescription>
                             Audio buffer size in milliseconds
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="speedRate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <FormLabel>Speed Rate</FormLabel>
+                            <span className="text-sm text-muted-foreground">{field.value || 1.0}</span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              min={0.5}
+                              max={2.0}
+                              step={0.1}
+                              value={[field.value || 1.0]}
+                              onValueChange={(vals) => field.onChange(vals[0])}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Speech speed (0.5 = slow, 1.0 = normal, 2.0 = fast)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="similarityBoost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <FormLabel>Similarity Boost</FormLabel>
+                            <span className="text-sm text-muted-foreground">{field.value || 0.75}</span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={[field.value || 0.75]}
+                              onValueChange={(vals) => field.onChange(vals[0])}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Voice consistency (0 = varied, 1 = highly consistent)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="stability"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <FormLabel>Stability</FormLabel>
+                            <span className="text-sm text-muted-foreground">{field.value || 0.5}</span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={[field.value || 0.5]}
+                              onValueChange={(vals) => field.onChange(vals[0])}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Voice stability (0 = expressive, 1 = stable)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="styleExaggeration"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <FormLabel>Style Exaggeration</FormLabel>
+                            <span className="text-sm text-muted-foreground">{field.value || 0}</span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={[field.value || 0]}
+                              onValueChange={(vals) => field.onChange(vals[0])}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Style intensity (0 = neutral, 1 = highly styled)
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -755,7 +868,117 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     <CardTitle>Call Management</CardTitle>
                     <CardDescription>Configure call behavior and termination</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-6">
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-semibold">Telephony Features</h4>
+                      
+                      <FormField
+                        control={form.control}
+                        name="noiseCancellation"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Noise Cancellation</FormLabel>
+                              <FormDescription>
+                                Filter background noise for clearer audio
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="voicemailDetection"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Voicemail Detection</FormLabel>
+                              <FormDescription>
+                                Detect and handle voicemail systems
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="keypadInput"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Keypad Input (DTMF)</FormLabel>
+                              <FormDescription>
+                                Enable touch-tone keypad input during calls
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="autoReschedule"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Auto Reschedule</FormLabel>
+                              <FormDescription>
+                                Automatically reschedule failed calls
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="finalCallMessage"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Final Call Message</FormLabel>
+                            <FormControl>
+                              <Textarea {...field} placeholder="Thank you for your time. Goodbye!" rows={2} />
+                            </FormControl>
+                            <FormDescription>
+                              Last message before call disconnects
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-semibold">Call Duration & Timeouts</h4>
+
                     <FormField
                       control={form.control}
                       name="maxDuration"
@@ -883,6 +1106,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         </FormItem>
                       )}
                     />
+                    </div>
                   </CardContent>
                 </Card>
 
