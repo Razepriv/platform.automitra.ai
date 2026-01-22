@@ -84,6 +84,28 @@ export default function Batches() {
     },
   });
 
+  // Run now mutation
+  const runNowMutation = useMutation({
+    mutationFn: async (batchId: string) => {
+      const res = await apiRequest('POST', `/api/batches/${batchId}/run`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/batches'] });
+      toast({
+        title: "Success",
+        description: "Batch started successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start batch",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Delete batch mutation
   const deleteBatchMutation = useMutation({
     mutationFn: async (batchId: string) => {
@@ -219,7 +241,8 @@ export default function Batches() {
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        disabled={batch.status === 'executed' || batch.status === 'queued'}
+                        disabled={batch.status === 'executed' || batch.status === 'queued' || runNowMutation.isPending}
+                        onClick={() => runNowMutation.mutate(batch.batch_id)}
                       >
                         <Play className="h-4 w-4" />
                       </Button>

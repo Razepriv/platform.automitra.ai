@@ -1815,6 +1815,201 @@ export class BolnaClient {
       body: JSON.stringify(callData),
     });
   }
+
+  // ============================================
+  // BATCH API METHODS
+  // ============================================
+
+  /**
+   * Create a batch for bulk calling
+   * API Reference: POST /batches
+   * 
+   * @param params.agent_id - The Bolna agent ID to use for calls
+   * @param params.file - CSV file buffer or FormData with contacts
+   * @param params.from_phone_number - Outbound phone number (E.164 format)
+   * @param params.webhook_url - Optional webhook for batch status updates
+   * @returns Batch creation response with batch_id
+   */
+  async createBatch(params: {
+    agent_id: string;
+    file: Buffer;
+    fileName: string;
+    from_phone_number: string;
+    webhook_url?: string;
+  }): Promise<{
+    batch_id: string;
+    file_name: string;
+    valid_contacts: number;
+    total_contacts: number;
+    state: string;
+    created_at: string;
+  }> {
+    this.ensureConfigured();
+
+    // Create form data for file upload
+    const formData = new FormData();
+    const blob = new Blob([params.file], { type: 'text/csv' });
+    formData.append('file', blob, params.fileName);
+    formData.append('agent_id', params.agent_id);
+    formData.append('from_phone_number', params.from_phone_number);
+    if (params.webhook_url) {
+      formData.append('webhook_url', params.webhook_url);
+    }
+
+    const response = await fetch(`${this.baseUrl}/batches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Bolna batch creation failed (${response.status}): ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Schedule a batch to run at a specific time
+   * API Reference: POST /batches/{batch_id}/schedule
+   * 
+   * @param batchId - The batch ID to schedule
+   * @param scheduledAt - ISO 8601 timestamp for when to run the batch
+   * @returns Scheduled batch details
+   */
+  async scheduleBatch(batchId: string, scheduledAt: string): Promise<{
+    batch_id: string;
+    file_name: string;
+    valid_contacts: number;
+    total_contacts: number;
+    state: string;
+    scheduled_at: string;
+    created_at: string;
+  }> {
+    this.ensureConfigured();
+    return await this.request(`/batches/${batchId}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify({ scheduled_at: scheduledAt }),
+    });
+  }
+
+  /**
+   * Stop a running batch
+   * API Reference: POST /batches/{batch_id}/stop
+   * 
+   * @param batchId - The batch ID to stop
+   * @returns Stop confirmation
+   */
+  async stopBatch(batchId: string): Promise<{ message: string; state: string }> {
+    this.ensureConfigured();
+    return await this.request(`/batches/${batchId}/stop`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get batch details and execution status
+   * API Reference: GET /batches/{batch_id}
+   * 
+   * @param batchId - The batch ID to get details for
+   * @returns Batch details with execution_status breakdown
+   */
+  async getBatch(batchId: string): Promise<{
+    batch_id: string;
+    file_name: string;
+    valid_contacts: number;
+    total_contacts: number;
+    state: string;
+    scheduled_at?: string;
+    created_at: string;
+    execution_status?: {
+      completed?: number;
+      queued?: number;
+      ringing?: number;
+      in_progress?: number;
+      initiated?: number;
+      failed?: number;
+      [key: string]: number | undefined;
+    };
+    from_phone_number?: string;
+    agent_id: string;
+  }> {
+    this.ensureConfigured();
+    return await this.request(`/batches/${batchId}`);
+  }
+
+  /**
+   * List all batches for the account
+   * 
+   * @returns Array of batches
+   */
+  async listBatches(): Promise<Array<{
+    batch_id: string;
+    file_name: string;
+    valid_contacts: number;
+    total_contacts: number;
+    state: string;
+    scheduled_at?: string;
+    created_at: string;
+    agent_id: string;
+    from_phone_number?: string;
+    execution_status?: Record<string, number>;
+  }>> {
+    this.ensureConfigured();
+    try {
+      const response = await this.request<any>('/batches');
+      if (Array.isArray(response)) {
+        return response;
+      }
+      if (response && typeof response === 'object' && 'batches' in response) {
+        return response.batches || [];
+      }
+      return [];
+    } catch (error) {
+      console.error('[Bolna] Error listing batches:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Run a batch immediately (for batches in 'created' state)
+   * This schedules the batch to run now
+   * 
+   * @param batchId - The batch ID to run
+   * @returns Scheduled batch response
+   */
+  async runBatchNow(batchId: string): Promise<any> {
+    this.ensureConfigured();
+    // Schedule for immediate execution
+    const now = new Date().toISOString();
+    return await this.scheduleBatch(batchId, now);
+  }
+
+  /**
+   * Get call logs for a batch
+   * 
+   * @param batchId - The batch ID to get call logs for
+   * @returns Array of call logs
+   */
+  async getBatchCallLogs(batchId: string): Promise<any[]> {
+    this.ensureConfigured();
+    try {
+      const response = await this.request<any>(`/batches/${batchId}/calls`);
+      if (Array.isArray(response)) {
+        return response;
+      }
+      if (response && typeof response === 'object' && 'calls' in response) {
+        return response.calls || [];
+      }
+      return [];
+    } catch (error) {
+      console.error(`[Bolna] Error fetching batch call logs for ${batchId}:`, error);
+      return [];
+    }
+  }
 }
 
 export const bolnaClient = new BolnaClient();

@@ -64,6 +64,9 @@ export function UploadBatchDialog({ open, onOpenChange }: UploadBatchDialogProps
       formData.append('file', csvFile);
       formData.append('agent_id', selectedAgent);
       formData.append('from_phone_number', selectedPhoneNumber);
+      if (webhookUrl) {
+        formData.append('webhook_url', webhookUrl);
+      }
 
       const res = await fetch('/api/batches', {
         method: 'POST',
@@ -86,6 +89,15 @@ export function UploadBatchDialog({ open, onOpenChange }: UploadBatchDialogProps
           { scheduled_at: new Date(scheduledTime).toISOString() }
         );
         return scheduleRes.json();
+      }
+
+      // If run now, trigger immediate execution
+      if (runMode === 'now') {
+        const runRes = await apiRequest(
+          'POST',
+          `/api/batches/${data.batch_id}/run`
+        );
+        return runRes.json();
       }
 
       return data;

@@ -12,7 +12,9 @@ import { exotelClient } from "./exotel";
 import { startCallPolling, stopCallPolling, stopAllPolling, getPollingStats } from "./callPoller";
 import { getAgentTemplatesForUser, createAgentTemplate, updateAgentTemplate, deleteAgentTemplate } from "./agentTemplates";
 import type { InsertLead, InsertChannelPartner, InsertCampaign, InsertCall, InsertVisit, InsertAiAgent, CreateAiAgentInput, UpdateAiAgentInput, InsertKnowledgeBase, CreateKnowledgeBaseInput, UpdateKnowledgeBaseInput, InsertPhoneNumber } from "@shared/schema";
-import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
+import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema, batches } from "@shared/schema";
+import { db } from "./db";
+import { eq, and, desc } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -2936,6 +2938,23 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
   (app as any).emitContactCreated = emitContactCreated;
   (app as any).emitContactUpdated = emitContactUpdated;
 
+  // Batch WebSocket emitters
+  const emitBatchCreated = (organizationId: string, batch: any) => {
+    io.to(`org:${organizationId}`).emit('batch:created', batch);
+  };
+
+  const emitBatchUpdated = (organizationId: string, batch: any) => {
+    io.to(`org:${organizationId}`).emit('batch:updated', batch);
+  };
+
+  const emitBatchDeleted = (organizationId: string, data: { batch_id: string }) => {
+    io.to(`org:${organizationId}`).emit('batch:deleted', data);
+  };
+
+  (app as any).emitBatchCreated = emitBatchCreated;
+  (app as any).emitBatchUpdated = emitBatchUpdated;
+  (app as any).emitBatchDeleted = emitBatchDeleted;
+
   // Auto-assign leads using "AI" (Simulated logic for now, or simple round-robin)
   app.post('/api/leads/auto-assign', isAuthenticated, async (req: any, res) => {
     try {
@@ -2984,6 +3003,434 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
     } catch (error) {
       console.error("Error auto-assigning leads:", error);
       res.status(500).json({ message: "Failed to auto-assign leads" });
+    }
+  });
+
+  // ============================================
+  // BATCH API ROUTES - Bolna Batch Integration
+  // ============================================
+
+  // List all batches for organization
+  app.get('/api/batches', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      // Get batches from local database
+      const localBatches = await db.select().from(batches)
+        .where(eq(batches.organizationId, user.organizationId))
+        .orderBy(desc(batches.createdAt));
+
+      // Optionally sync with Bolna to get latest status
+      try {
+        const bolnaBatches = await bolnaClient.listBatches();
+        
+        // Update local records with latest Bolna data
+        for (const bolnaBatch of bolnaBatches) {
+          const localBatch = localBatches.find(b => b.batchId === bolnaBatch.batch_id);
+          if (localBatch) {
+            // Update status and execution_status from Bolna
+            await db.update(batches)
+              .set({
+                status: bolnaBatch.state,
+                executionStatus: bolnaBatch.execution_status,
+                updatedAt: new Date(),
+              })
+              .where(eq(batches.batchId, bolnaBatch.batch_id));
+          }
+        }
+      } catch (syncError) {
+        console.warn('[Batches] Could not sync with Bolna:', (syncError as Error).message);
+      }
+
+      // Return updated local batches
+      const updatedBatches = await db.select().from(batches)
+        .where(eq(batches.organizationId, user.organizationId))
+        .orderBy(desc(batches.createdAt));
+
+      // Transform to frontend format
+      const result = updatedBatches.map(b => ({
+        batch_id: b.batchId,
+        file_name: b.fileName,
+        valid_contacts: b.validContacts,
+        total_contacts: b.totalContacts,
+        status: b.status,
+        execution_status: b.executionStatus,
+        scheduled_at: b.scheduledAt?.toISOString(),
+        created_at: b.createdAt?.toISOString(),
+        from_phone_number: b.fromPhoneNumber,
+        agent_id: b.agentId,
+      }));
+
+      res.json(result);
+    } catch (error) {
+      console.error('[Batches] Error listing batches:', error);
+      res.status(500).json({ message: "Failed to list batches", error: (error as Error).message });
+    }
+  });
+
+  // Create a new batch (upload CSV)
+  app.post('/api/batches', isAuthenticated, upload.single('file'), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { agent_id, from_phone_number, webhook_url } = req.body;
+
+      if (!req.file) {
+        return res.status(400).json({ message: "CSV file is required" });
+      }
+
+      if (!agent_id) {
+        return res.status(400).json({ message: "agent_id is required" });
+      }
+
+      if (!from_phone_number) {
+        return res.status(400).json({ message: "from_phone_number is required" });
+      }
+
+      console.log(`[Batches] Creating batch for agent ${agent_id} with ${req.file.originalname}`);
+
+      // Upload to Bolna
+      const bolnaResponse = await bolnaClient.createBatch({
+        agent_id,
+        file: req.file.buffer,
+        fileName: req.file.originalname,
+        from_phone_number,
+        webhook_url: webhook_url || undefined,
+      });
+
+      console.log('[Batches] Bolna response:', bolnaResponse);
+
+      // Store in local database
+      const [newBatch] = await db.insert(batches).values({
+        organizationId: user.organizationId,
+        batchId: bolnaResponse.batch_id,
+        agentId: agent_id,
+        fileName: bolnaResponse.file_name || req.file.originalname,
+        validContacts: bolnaResponse.valid_contacts,
+        totalContacts: bolnaResponse.total_contacts,
+        status: bolnaResponse.state || 'created',
+        fromPhoneNumber: from_phone_number,
+        webhookUrl: webhook_url,
+        createdBy: userId,
+      }).returning();
+
+      // Emit WebSocket event
+      const emitBatchCreated = (app as any).emitBatchCreated;
+      if (emitBatchCreated) {
+        emitBatchCreated(user.organizationId, {
+          batch_id: newBatch.batchId,
+          file_name: newBatch.fileName,
+          valid_contacts: newBatch.validContacts,
+          total_contacts: newBatch.totalContacts,
+          status: newBatch.status,
+        });
+      }
+
+      res.json({
+        batch_id: newBatch.batchId,
+        file_name: newBatch.fileName,
+        valid_contacts: newBatch.validContacts,
+        total_contacts: newBatch.totalContacts,
+        status: newBatch.status,
+        created_at: newBatch.createdAt?.toISOString(),
+      });
+    } catch (error) {
+      console.error('[Batches] Error creating batch:', error);
+      res.status(500).json({ message: "Failed to create batch", error: (error as Error).message });
+    }
+  });
+
+  // Get batch details
+  app.get('/api/batches/:batch_id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { batch_id } = req.params;
+
+      // Get from local DB first
+      const [localBatch] = await db.select().from(batches)
+        .where(and(
+          eq(batches.batchId, batch_id),
+          eq(batches.organizationId, user.organizationId)
+        ));
+
+      if (!localBatch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+
+      // Get latest status from Bolna
+      try {
+        const bolnaBatch = await bolnaClient.getBatch(batch_id);
+        
+        // Update local record
+        await db.update(batches)
+          .set({
+            status: bolnaBatch.state,
+            executionStatus: bolnaBatch.execution_status,
+            updatedAt: new Date(),
+          })
+          .where(eq(batches.batchId, batch_id));
+
+        res.json({
+          batch_id: bolnaBatch.batch_id,
+          file_name: bolnaBatch.file_name,
+          valid_contacts: bolnaBatch.valid_contacts,
+          total_contacts: bolnaBatch.total_contacts,
+          status: bolnaBatch.state,
+          execution_status: bolnaBatch.execution_status,
+          scheduled_at: bolnaBatch.scheduled_at,
+          created_at: bolnaBatch.created_at,
+          from_phone_number: bolnaBatch.from_phone_number || localBatch.fromPhoneNumber,
+          agent_id: bolnaBatch.agent_id,
+        });
+      } catch (bolnaError) {
+        // Return local data if Bolna fails
+        res.json({
+          batch_id: localBatch.batchId,
+          file_name: localBatch.fileName,
+          valid_contacts: localBatch.validContacts,
+          total_contacts: localBatch.totalContacts,
+          status: localBatch.status,
+          execution_status: localBatch.executionStatus,
+          scheduled_at: localBatch.scheduledAt?.toISOString(),
+          created_at: localBatch.createdAt?.toISOString(),
+          from_phone_number: localBatch.fromPhoneNumber,
+          agent_id: localBatch.agentId,
+        });
+      }
+    } catch (error) {
+      console.error('[Batches] Error getting batch:', error);
+      res.status(500).json({ message: "Failed to get batch", error: (error as Error).message });
+    }
+  });
+
+  // Schedule a batch
+  app.post('/api/batches/:batch_id/schedule', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { batch_id } = req.params;
+      const { scheduled_at } = req.body;
+
+      if (!scheduled_at) {
+        return res.status(400).json({ message: "scheduled_at is required" });
+      }
+
+      // Verify batch belongs to organization
+      const [localBatch] = await db.select().from(batches)
+        .where(and(
+          eq(batches.batchId, batch_id),
+          eq(batches.organizationId, user.organizationId)
+        ));
+
+      if (!localBatch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+
+      console.log(`[Batches] Scheduling batch ${batch_id} for ${scheduled_at}`);
+
+      // Schedule in Bolna
+      const bolnaResponse = await bolnaClient.scheduleBatch(batch_id, scheduled_at);
+
+      // Update local record
+      await db.update(batches)
+        .set({
+          status: bolnaResponse.state || 'scheduled',
+          scheduledAt: new Date(scheduled_at),
+          updatedAt: new Date(),
+        })
+        .where(eq(batches.batchId, batch_id));
+
+      // Emit WebSocket event
+      io.to(`org:${user.organizationId}`).emit('batch:updated', {
+        batch_id,
+        status: 'scheduled',
+        scheduled_at,
+      });
+
+      res.json({
+        batch_id: bolnaResponse.batch_id,
+        status: bolnaResponse.state || 'scheduled',
+        scheduled_at: bolnaResponse.scheduled_at,
+      });
+    } catch (error) {
+      console.error('[Batches] Error scheduling batch:', error);
+      res.status(500).json({ message: "Failed to schedule batch", error: (error as Error).message });
+    }
+  });
+
+  // Run batch now (immediate execution)
+  app.post('/api/batches/:batch_id/run', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { batch_id } = req.params;
+
+      // Verify batch belongs to organization
+      const [localBatch] = await db.select().from(batches)
+        .where(and(
+          eq(batches.batchId, batch_id),
+          eq(batches.organizationId, user.organizationId)
+        ));
+
+      if (!localBatch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+
+      console.log(`[Batches] Running batch ${batch_id} now`);
+
+      // Run immediately via Bolna
+      const bolnaResponse = await bolnaClient.runBatchNow(batch_id);
+
+      // Update local record
+      await db.update(batches)
+        .set({
+          status: 'queued',
+          scheduledAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(batches.batchId, batch_id));
+
+      // Emit WebSocket event
+      io.to(`org:${user.organizationId}`).emit('batch:updated', {
+        batch_id,
+        status: 'queued',
+      });
+
+      res.json({
+        batch_id,
+        status: 'queued',
+        message: 'Batch started successfully',
+      });
+    } catch (error) {
+      console.error('[Batches] Error running batch:', error);
+      res.status(500).json({ message: "Failed to run batch", error: (error as Error).message });
+    }
+  });
+
+  // Stop a running batch
+  app.post('/api/batches/:batch_id/stop', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { batch_id } = req.params;
+
+      // Verify batch belongs to organization
+      const [localBatch] = await db.select().from(batches)
+        .where(and(
+          eq(batches.batchId, batch_id),
+          eq(batches.organizationId, user.organizationId)
+        ));
+
+      if (!localBatch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+
+      console.log(`[Batches] Stopping batch ${batch_id}`);
+
+      // Stop in Bolna
+      const bolnaResponse = await bolnaClient.stopBatch(batch_id);
+
+      // Update local record
+      await db.update(batches)
+        .set({
+          status: 'stopped',
+          updatedAt: new Date(),
+        })
+        .where(eq(batches.batchId, batch_id));
+
+      // Emit WebSocket event
+      io.to(`org:${user.organizationId}`).emit('batch:updated', {
+        batch_id,
+        status: 'stopped',
+      });
+
+      res.json({
+        batch_id,
+        status: 'stopped',
+        message: bolnaResponse.message || 'Batch stopped successfully',
+      });
+    } catch (error) {
+      console.error('[Batches] Error stopping batch:', error);
+      res.status(500).json({ message: "Failed to stop batch", error: (error as Error).message });
+    }
+  });
+
+  // Delete a batch
+  app.delete('/api/batches/:batch_id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { batch_id } = req.params;
+
+      // Verify batch belongs to organization
+      const [localBatch] = await db.select().from(batches)
+        .where(and(
+          eq(batches.batchId, batch_id),
+          eq(batches.organizationId, user.organizationId)
+        ));
+
+      if (!localBatch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+
+      console.log(`[Batches] Deleting batch ${batch_id}`);
+
+      // Delete from local database
+      await db.delete(batches)
+        .where(eq(batches.batchId, batch_id));
+
+      // Emit WebSocket event
+      io.to(`org:${user.organizationId}`).emit('batch:deleted', { batch_id });
+
+      res.json({ message: 'Batch deleted successfully', batch_id });
+    } catch (error) {
+      console.error('[Batches] Error deleting batch:', error);
+      res.status(500).json({ message: "Failed to delete batch", error: (error as Error).message });
+    }
+  });
+
+  // Get batch call logs
+  app.get('/api/batches/:batch_id/calls', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { batch_id } = req.params;
+
+      // Verify batch belongs to organization
+      const [localBatch] = await db.select().from(batches)
+        .where(and(
+          eq(batches.batchId, batch_id),
+          eq(batches.organizationId, user.organizationId)
+        ));
+
+      if (!localBatch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+
+      // Get call logs from Bolna
+      const callLogs = await bolnaClient.getBatchCallLogs(batch_id);
+
+      res.json(callLogs);
+    } catch (error) {
+      console.error('[Batches] Error getting batch call logs:', error);
+      res.status(500).json({ message: "Failed to get batch call logs", error: (error as Error).message });
     }
   });
 
