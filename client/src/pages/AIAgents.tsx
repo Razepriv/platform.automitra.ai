@@ -359,8 +359,10 @@ export default function AIAgents() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: AgentFormValues) => {
-      if (!selectedAgent) throw new Error("No agent selected");
+    mutationFn: async (data: AgentFormValues & { _agentId?: string }) => {
+      // Use passed agentId or fall back to selectedAgent
+      const agentId = data._agentId || selectedAgent?.id;
+      if (!agentId) throw new Error("No agent selected");
       
       // Build payload - only include defined fields from schema
       const payload: any = {
@@ -458,7 +460,7 @@ export default function AIAgents() {
       
       payload.bolnaConfig = bolnaConfig;
       
-      const res = await apiRequest('PATCH', `/api/ai-agents/${selectedAgent.id}`, payload);
+      const res = await apiRequest('PATCH', `/api/ai-agents/${agentId}`, payload);
       return res.json();
     },
     onSuccess: () => {
@@ -482,13 +484,13 @@ export default function AIAgents() {
 
   const handleSubmit = (data: AgentFormValues) => {
     if (dialogMode === "edit" && selectedAgent) {
-      updateMutation.mutate(data);
+      // Pass agentId directly to avoid race condition with state clearing
+      const agentId = selectedAgent.id;
+      updateMutation.mutate({ ...data, _agentId: agentId } as any);
     } else {
       createMutation.mutate(data);
     }
-    setIsDialogOpen(false);
-    setSelectedAgent(null);
-    setFormInitialValues(undefined);
+    // Note: Dialog closing is handled in onSuccess callbacks
   };
 
   const syncMutation = useMutation({
