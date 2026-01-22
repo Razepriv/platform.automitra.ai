@@ -756,7 +756,16 @@ export async function setupAuth(app: Express) {
 
       if (error) {
         console.error(`❌ Signup failed for ${sanitizedEmail}:`, error.message);
-        const message = error.message || "Unable to create account";
+        
+        // Handle duplicate email error specifically
+        let message = error.message || "Unable to create account";
+        if (error.message?.includes('User already registered') || 
+            error.message?.includes('already been registered') ||
+            error.message?.includes('duplicate key value') ||
+            error.message?.includes('users_email_unique')) {
+          message = "This email is already registered. Please use a different email or log in instead.";
+        }
+        
         return isJson ? res.status(400).json({ message }) : res.redirect(`/api/signup?error=${encodeURIComponent(message)}`);
       }
 
@@ -780,7 +789,16 @@ export async function setupAuth(app: Express) {
       return isJson ? res.json({ success: true, message: successMsg }) : res.redirect(`/api/login?success=${encodeURIComponent(successMsg)}`);
     } catch (err: any) {
       console.error("Signup error:", err);
-      const message = err?.message || "Unable to create account";
+      
+      // Handle duplicate email error in catch block too
+      let message = err?.message || "Unable to create account";
+      if (message?.includes('duplicate key value') || 
+          message?.includes('users_email_unique') ||
+          message?.includes('User already registered') ||
+          message?.includes('already been registered')) {
+        message = "This email is already registered. Please use a different email or log in instead.";
+      }
+      
       return isJson ? res.status(500).json({ message }) : res.redirect(`/api/signup?error=${encodeURIComponent(message)}`);
     }
   });

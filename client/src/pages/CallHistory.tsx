@@ -292,8 +292,8 @@ export default function CallHistory() {
   });
 
   const filteredCalls = calls.filter((call) => {
-    // Only show calls made by the logged-in user
-    if (call.userId !== user?.id) return false;
+    // Calls are already filtered by organization on backend
+    // All users in the organization can see all calls
     const matchesSearch =
       !searchQuery ||
       call.contactName?.toLowerCase().includes(searchQuery.toLowerCase()) ||

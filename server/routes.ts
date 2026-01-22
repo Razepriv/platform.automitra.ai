@@ -1986,7 +1986,29 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       if (!item) {
         return res.status(404).json({ message: "Knowledge base item not found" });
       }
-      
+
+      // --- Auto-link KB to agent if assigned and has Bolna RAG ID ---
+      // Check if agentId and bolnaKbId (Bolna RAG ID) are present
+      const agentId = item.agentId;
+      const bolnaRagId = typeof item.bolnaKbId === 'string' ? item.bolnaKbId : null;
+      if (agentId && bolnaRagId) {
+        try {
+          const agent = await storage.getAIAgent(agentId, user.organizationId);
+          if (agent) {
+            const existingKBIds = agent.knowledgeBaseIds || [];
+            if (!existingKBIds.includes(bolnaRagId)) {
+              const updatedKBIds = [...existingKBIds, bolnaRagId];
+              await storage.updateAIAgent(agentId, user.organizationId, {
+                knowledgeBaseIds: updatedKBIds,
+              });
+              console.log(`[KB Update] ✅ Agent ${agentId} updated with KB: ${bolnaRagId}`);
+            }
+          }
+        } catch (err) {
+          console.error(`[KB Update] Failed to update agent with KB: ${bolnaRagId}`, err);
+        }
+      }
+
       res.json(item);
     } catch (error) {
       console.error("Error updating knowledge base item:", error);
@@ -2033,9 +2055,18 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         doc.end();
       });
 
+
+      // Wrap buffer in a file-like object for Bolna API
+      const fileObject = {
+        buffer: pdfBuffer,
+        originalname: `${title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+        mimetype: 'application/pdf',
+        size: pdfBuffer.length
+      };
+
       // Upload to Bolna
-      const bolnaKB = await bolnaClient.createKnowledgeBase(pdfBuffer, {
-        fileName: `${title.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+      const bolnaKB = await bolnaClient.createKnowledgeBase(fileObject, {
+        fileName: fileObject.originalname,
         chunk_size: 512,
         similarity_top_k: 5,
         overlapping: 20,

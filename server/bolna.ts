@@ -734,6 +734,18 @@ export class BolnaClient {
     };
   }
 
+  /**
+   * Update agent with raw Bolna configuration (for direct API updates)
+   * Used by webhook sync scripts to update agents in Bolna API directly
+   */
+  async updateAgentRaw(agentId: string, config: any): Promise<any> {
+    this.ensureConfigured();
+    return await this.request(`/v2/agent/${agentId}`, {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+  }
+
   async updateAgent(
     agentId: string,
     updates: Partial<AiAgent>
