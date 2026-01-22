@@ -34,11 +34,13 @@ import {
   Sparkles,
   Plus,
   ArrowUpDown,
-  Bot
+  Bot,
+  Upload
 } from "lucide-react";
 import type { Lead } from "@shared/schema";
 import { format } from "date-fns";
 import { LeadDialog } from "@/components/LeadDialog";
+import { BulkLeadUploadDialog } from "@/components/BulkLeadUploadDialog";
 
 export default function Leads() {
   const [, navigate] = useLocation();
@@ -46,6 +48,7 @@ export default function Leads() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | undefined>(undefined);
 
   const { data: leads = [], isLoading } = useQuery<Lead[]>({
@@ -129,6 +132,13 @@ export default function Leads() {
           <p className="text-muted-foreground">Manage and track your incoming leads</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => setIsBulkUploadOpen(true)}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            Bulk Upload
+          </Button>
           <Button
             onClick={() => autoAssignMutation.mutate()}
             disabled={autoAssignMutation.isPending}
@@ -272,6 +282,11 @@ export default function Leads() {
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         lead={selectedLead}
+      />
+
+      <BulkLeadUploadDialog
+        open={isBulkUploadOpen}
+        onOpenChange={setIsBulkUploadOpen}
       />
     </div>
   );

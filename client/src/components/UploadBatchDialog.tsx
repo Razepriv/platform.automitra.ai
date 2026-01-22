@@ -24,7 +24,6 @@ export function UploadBatchDialog({ open, onOpenChange }: UploadBatchDialogProps
   const [selectedPhoneNumber, setSelectedPhoneNumber] = useState<string>("");
   const [runMode, setRunMode] = useState<"now" | "schedule">("now");
   const [scheduledTime, setScheduledTime] = useState<string>("");
-  const [webhookUrl, setWebhookUrl] = useState<string>("https://example.com/webhook");
 
   // Fetch agents
   const { data: agents = [] } = useQuery<AiAgent[]>({
@@ -64,9 +63,7 @@ export function UploadBatchDialog({ open, onOpenChange }: UploadBatchDialogProps
       formData.append('file', csvFile);
       formData.append('agent_id', selectedAgent);
       formData.append('from_phone_number', selectedPhoneNumber);
-      if (webhookUrl) {
-        formData.append('webhook_url', webhookUrl);
-      }
+      // Webhook URL is predefined on backend using PUBLIC_WEBHOOK_URL
 
       const res = await fetch('/api/batches', {
         method: 'POST',
@@ -271,18 +268,6 @@ export function UploadBatchDialog({ open, onOpenChange }: UploadBatchDialogProps
                 />
               </div>
             )}
-          </div>
-
-          {/* Webhook URL */}
-          <div>
-            <Label>Webhook URL</Label>
-            <Input
-              type="url"
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://example.com/webhook"
-              className="mt-2"
-            />
           </div>
 
           {/* Submit Button */}

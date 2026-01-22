@@ -22,9 +22,7 @@ import {
   Download, 
   Trash2, 
   FileText,
-  Loader2,
-  HelpCircle,
-  DollarSign
+  Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { UploadBatchDialog } from "@/components/UploadBatchDialog";
@@ -153,32 +151,15 @@ export default function Batches() {
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Agent Batches</h1>
           <p className="text-muted-foreground">
-            Displays all batches from agents
+            Upload CSV files for bulk calling campaigns
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-2 bg-secondary rounded-lg">
-            <DollarSign className="h-4 w-4" />
-            <span className="text-sm font-semibold">BALANCE</span>
-            <span className="text-sm">$6.90</span>
-          </div>
-          <Button variant="outline">
-            <DollarSign className="h-4 w-4 mr-2" />
-            Add more funds
-          </Button>
-          <Button variant="ghost" size="icon">
-            <HelpCircle className="h-4 w-4" />
-          </Button>
           <Button onClick={() => setUploadDialogOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Upload Batch
           </Button>
         </div>
-      </div>
-
-      {/* Agent Selector - placeholder */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>ananya - DPS - dev</span>
       </div>
 
       {/* Template Download Link */}
@@ -200,12 +181,7 @@ export default function Batches() {
                 <TableRow>
                   <TableHead>Batch ID</TableHead>
                   <TableHead>File name</TableHead>
-                  <TableHead>
-                    <div className="flex items-center gap-1">
-                      Uploaded contacts
-                      <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                    </div>
-                  </TableHead>
+                  <TableHead>Uploaded contacts</TableHead>
                   <TableHead>Execution Status</TableHead>
                   <TableHead>Batch Status</TableHead>
                   <TableHead>Workflow</TableHead>

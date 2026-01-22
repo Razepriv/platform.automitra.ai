@@ -915,6 +915,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[Bolna Webhook] ✅ Metrics emitted`);
       }
 
+      // AI-based lead status update after call completion
+      if ((normalizedStatus === 'completed' || normalizedStatus === 'failed') && call.leadId) {
+        console.log(`[Bolna Webhook] 🤖 Updating lead ${call.leadId} based on call outcome`);
+        
+        try {
+          const lead = await storage.getLead(call.leadId, call.organizationId);
+          if (lead) {
+            let newLeadStatus = lead.status;
+            let aiSummary = lead.aiSummary || '';
+            
+            // Analyze call outcome
+            if (normalizedStatus === 'completed' && transcript && transcript.length > 100) {
+              // Use AI to analyze the transcript and determine lead status
+              try {
+                const analysisPrompt = `Analyze this call transcript and determine the lead status:
+                
+Transcript: ${transcript.substring(0, 2000)}
+
+Based on the conversation, categorize the lead as one of:
+- qualified: Customer showed interest, asked questions, discussed pricing/features
+- converted: Customer agreed to purchase, scheduled meeting, or expressed strong intent
+- lost: Customer declined, not interested, or explicitly rejected
+- contacted: Call happened but outcome unclear, need follow-up
+
+Respond with ONLY one of these words: qualified, converted, lost, or contacted`;
+
+                // Call OpenAI for analysis
+                const statusAnalysis = await generateAISummary(analysisPrompt);
+                const analyzedStatus = statusAnalysis.toLowerCase().trim();
+                
+                if (['qualified', 'converted', 'lost', 'contacted'].includes(analyzedStatus)) {
+                  newLeadStatus = analyzedStatus;
+                }
+
+                // Generate conversation summary
+                const summaryPrompt = `Summarize this sales call in 2-3 sentences. Focus on: customer's interest level, key discussion points, and next steps.
+
+Transcript: ${transcript.substring(0, 2000)}`;
+                
+                const conversationSummary = await generateAISummary(summaryPrompt);
+                aiSummary = conversationSummary;
+                
+                console.log(`[Bolna Webhook] AI analyzed lead status: ${lead.status} -> ${newLeadStatus}`);
+              } catch (aiError) {
+                console.error(`[Bolna Webhook] AI analysis failed:`, (aiError as Error).message);
+                // Fallback: mark as contacted if call completed
+                newLeadStatus = 'contacted';
+              }
+            } else if (normalizedStatus === 'failed' || isVoicemail) {
+              // Call failed or went to voicemail - keep current status, add note
+              aiSummary = (aiSummary || '') + `\n[${new Date().toISOString()}]: ${isVoicemail ? 'Voicemail reached' : 'Call failed to connect'}`;
+            } else if (normalizedStatus === 'completed' && (!transcript || transcript.length < 100)) {
+              // Short call - likely no answer or quick disconnect
+              aiSummary = (aiSummary || '') + `\n[${new Date().toISOString()}]: Brief call (${callDuration || 0}s) - may need follow-up`;
+              newLeadStatus = 'contacted';
+            }
+
+            // Update lead with new status and AI summary
+            const leadUpdates: any = {
+              lastContactedAt: new Date(),
+              totalCalls: (lead.totalCalls || 0) + 1,
+            };
+
+            if (newLeadStatus !== lead.status) {
+              leadUpdates.status = newLeadStatus;
+            }
+
+            if (aiSummary && aiSummary !== lead.aiSummary) {
+              leadUpdates.aiSummary = aiSummary;
+            }
+
+            // Add call notes
+            leadUpdates.notes = (lead.notes || '') + `\n[Call ${new Date().toISOString()}]: ${normalizedStatus}${callDuration ? ` (${callDuration}s)` : ''}`;
+
+            await storage.updateLead(call.leadId, call.organizationId, leadUpdates);
+            
+            console.log(`[Bolna Webhook] ✅ Lead ${call.leadId} updated: status=${newLeadStatus}`);
+
+            // Emit lead update
+            if ((app as any).emitLeadUpdate) {
+              (app as any).emitLeadUpdate(call.organizationId, { ...lead, ...leadUpdates });
+            }
+          }
+        } catch (leadError) {
+          console.error(`[Bolna Webhook] Failed to update lead:`, (leadError as Error).message);
+        }
+      }
+
       res.json({ received: true });
     } catch (error) {
       console.error("Bolna webhook error:", error);
@@ -2394,6 +2482,169 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
     }
   });
 
+  // Bulk upload leads with AI assignment and auto-calling
+  app.post('/api/leads/bulk-upload-and-call', isAuthenticated, upload.single('file'), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const enableAIAssignment = req.body.enableAIAssignment === 'true';
+      const enableAutoCalling = req.body.enableAutoCalling === 'true';
+      const fromPhoneNumber = req.body.fromPhoneNumber;
+
+      console.log(`[Bulk Lead Upload] Processing file: ${req.file.originalname}`);
+      console.log(`[Bulk Lead Upload] AI Assignment: ${enableAIAssignment}, Auto-Calling: ${enableAutoCalling}`);
+
+      // Parse CSV
+      const fileContent = req.file.buffer.toString('utf-8');
+      const { data } = Papa.parse(fileContent, { header: true, skipEmptyLines: true });
+
+      // Create leads
+      const leadsData: InsertLead[] = (data as any[]).map((row: any) => ({
+        organizationId: user.organizationId,
+        name: row.name || row.Name || '',
+        email: row.email || row.Email || null,
+        phone: row.phone || row.Phone || row.contact_number || null,
+        company: row.company || row.Company || null,
+        notes: row.notes || row.Notes || null,
+        status: 'new',
+        customFields: row, // Store all CSV fields for AI analysis
+      })).filter(lead => lead.name && lead.phone); // Require name and phone
+
+      if (leadsData.length === 0) {
+        return res.status(400).json({ message: "No valid leads found. Ensure CSV has 'name' and 'phone' columns." });
+      }
+
+      const createdLeads = await storage.createLeadsBulk(leadsData, user.organizationId);
+      console.log(`[Bulk Lead Upload] Created ${createdLeads.length} leads`);
+
+      // Emit WebSocket event for each lead
+      for (const lead of createdLeads) {
+        if ((app as any).emitLeadCreated) {
+          (app as any).emitLeadCreated(user.organizationId, lead);
+        }
+      }
+
+      let assignedCount = 0;
+      let callsInitiated = 0;
+
+      // AI Assignment
+      if (enableAIAssignment) {
+        console.log(`[Bulk Lead Upload] Starting AI assignment for ${createdLeads.length} leads`);
+        
+        // Get available agents
+        const agents = await storage.getAIAgents(user.organizationId);
+        const activeAgents = agents.filter(a => a.status === 'active' && a.bolnaAgentId);
+        
+        if (activeAgents.length === 0) {
+          console.warn(`[Bulk Lead Upload] No active agents with Bolna IDs found`);
+        } else {
+          // Use AI to match leads to agents
+          const assignments = await matchLeadsToAgents(createdLeads, activeAgents);
+          
+          for (const lead of createdLeads) {
+            const assignedAgentId = assignments[lead.id];
+            if (assignedAgentId) {
+              const agent = activeAgents.find(a => a.id === assignedAgentId);
+              if (agent) {
+                // Update lead with assignment
+                await storage.updateLead(lead.id, user.organizationId, {
+                  assignedAgentId: agent.id,
+                  status: 'contacted',
+                  aiSummary: `AI-assigned to ${agent.name} based on lead profile analysis.`,
+                  notes: (lead.notes || '') + `\n[AI]: Assigned to ${agent.name} at ${new Date().toISOString()}`
+                });
+                assignedCount++;
+
+                // Emit update
+                if ((app as any).emitLeadUpdate) {
+                  (app as any).emitLeadUpdate(user.organizationId, { ...lead, assignedAgentId: agent.id, status: 'contacted' });
+                }
+
+                // Auto-call if enabled
+                if (enableAutoCalling && agent.bolnaAgentId && lead.phone && fromPhoneNumber) {
+                  try {
+                    console.log(`[Bulk Lead Upload] Initiating call for lead ${lead.name} (${lead.phone}) via agent ${agent.name}`);
+                    
+                    // Initiate call via Bolna
+                    const callResponse = await bolnaClient.initiateCallV2({
+                      agent_id: agent.bolnaAgentId,
+                      recipient_phone_number: lead.phone,
+                      from_phone_number: fromPhoneNumber,
+                      user_data: {
+                        lead_id: lead.id,
+                        lead_name: lead.name,
+                        company: lead.company,
+                        notes: lead.notes,
+                        ...(lead.customFields as object || {}),
+                      },
+                    });
+
+                    // Create call record
+                    const callRecord = await storage.createCall({
+                      organizationId: user.organizationId,
+                      agentId: agent.id,
+                      leadId: lead.id,
+                      recipientNumber: lead.phone,
+                      fromNumber: fromPhoneNumber,
+                      bolnaCallId: callResponse.execution_id || callResponse.call_id,
+                      status: 'initiated',
+                      direction: 'outbound',
+                      metadata: {
+                        bulkUpload: true,
+                        uploadedAt: new Date().toISOString(),
+                      },
+                    });
+
+                    // Emit call created
+                    if ((app as any).emitCallCreated) {
+                      (app as any).emitCallCreated(user.organizationId, callRecord);
+                    }
+
+                    callsInitiated++;
+                    
+                    // Update lead status
+                    await storage.updateLead(lead.id, user.organizationId, {
+                      status: 'contacted',
+                      lastContactedAt: new Date(),
+                      totalCalls: (lead.totalCalls || 0) + 1,
+                    });
+                  } catch (callError) {
+                    console.error(`[Bulk Lead Upload] Failed to initiate call for ${lead.name}:`, (callError as Error).message);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      const message = enableAutoCalling 
+        ? `Uploaded ${createdLeads.length} leads, assigned ${assignedCount} to agents, initiated ${callsInitiated} calls`
+        : enableAIAssignment
+          ? `Uploaded ${createdLeads.length} leads, assigned ${assignedCount} to agents`
+          : `Uploaded ${createdLeads.length} leads`;
+
+      res.json({
+        success: true,
+        message,
+        leadsCreated: createdLeads.length,
+        leadsAssigned: assignedCount,
+        callsInitiated,
+      });
+    } catch (error) {
+      console.error("[Bulk Lead Upload] Error:", error);
+      res.status(500).json({ message: "Failed to process bulk upload", error: (error as Error).message });
+    }
+  });
+
   app.patch('/api/leads/:id', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -3077,7 +3328,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       const user = await storage.getUser(userId);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      const { agent_id, from_phone_number, webhook_url } = req.body;
+      const { agent_id, from_phone_number } = req.body;
 
       if (!req.file) {
         return res.status(400).json({ message: "CSV file is required" });
@@ -3091,7 +3342,17 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         return res.status(400).json({ message: "from_phone_number is required" });
       }
 
+      // Use predefined webhook URL from environment
+      let webhookUrl: string | undefined = undefined;
+      if (process.env.PUBLIC_WEBHOOK_URL) {
+        const baseUrl = process.env.PUBLIC_WEBHOOK_URL.startsWith('http') 
+          ? process.env.PUBLIC_WEBHOOK_URL 
+          : `https://${process.env.PUBLIC_WEBHOOK_URL}`;
+        webhookUrl = `${baseUrl}/api/webhooks/bolna/call-status`;
+      }
+
       console.log(`[Batches] Creating batch for agent ${agent_id} with ${req.file.originalname}`);
+      console.log(`[Batches] Using predefined webhook URL: ${webhookUrl || 'none'}`);
 
       // Upload to Bolna
       const bolnaResponse = await bolnaClient.createBatch({
@@ -3099,7 +3360,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         file: req.file.buffer,
         fileName: req.file.originalname,
         from_phone_number,
-        webhook_url: webhook_url || undefined,
+        webhook_url: webhookUrl,
       });
 
       console.log('[Batches] Bolna response:', bolnaResponse);
@@ -3114,7 +3375,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         totalContacts: bolnaResponse.total_contacts,
         status: bolnaResponse.state || 'created',
         fromPhoneNumber: from_phone_number,
-        webhookUrl: webhook_url,
+        webhookUrl: webhookUrl,
         createdBy: userId,
       }).returning();
 
