@@ -33,6 +33,9 @@ export function startCallPolling(
   }
 
   console.log(`🔄 [Poll] Starting status polling for call ${bolnaCallId}`);
+  console.log(`[Poll] emitCallUpdate available: ${typeof emitCallUpdate === 'function'}`);
+  console.log(`[Poll] emitMetricsUpdate available: ${typeof emitMetricsUpdate === 'function'}`);
+  console.log(`[Poll] organizationId: ${organizationId}`);
 
   pollStatuses.set(bolnaCallId, {
     attempts: 0,
@@ -40,6 +43,15 @@ export function startCallPolling(
     callId,
     organizationId,
   });
+
+  // Run first poll immediately
+  pollCallStatus(
+    bolnaCallId,
+    callId,
+    organizationId,
+    emitCallUpdate,
+    emitMetricsUpdate
+  );
 
   const pollInterval = setInterval(async () => {
     await pollCallStatus(
@@ -140,10 +152,14 @@ async function pollCallStatus(
 
       // Emit real-time updates
       if (emitCallUpdate && updatedCall) {
+        console.log(`🚀 [Poll] Emitting call:updated to org:${organizationId}`);
         emitCallUpdate(organizationId, updatedCall);
+      } else {
+        console.warn(`⚠️ [Poll] Cannot emit - emitCallUpdate: ${!!emitCallUpdate}, updatedCall: ${!!updatedCall}`);
       }
 
       if (emitMetricsUpdate) {
+        console.log(`📊 [Poll] Emitting metrics:updated to org:${organizationId}`);
         const metrics = await storage.getDashboardMetrics(organizationId);
         emitMetricsUpdate(organizationId, metrics);
       }

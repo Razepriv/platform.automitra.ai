@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AgentFormDialog, AgentFormValues } from "@/components/AgentFormDialog";
+import { AgentFormDialog } from "@/components/AgentFormDialog";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -202,7 +202,30 @@ export default function AIAgents() {
   // Handler to open dialog for edit
   const handleOpenEdit = (agent: AiAgent) => {
     setDialogMode("edit");
-    setFormInitialValues(agent);
+    // Convert null values to undefined for form compatibility
+    const formValues = {
+      name: agent.name,
+      model: agent.model,
+      language: agent.language,
+      provider: agent.provider,
+      status: agent.status,
+      description: agent.description ?? undefined,
+      voiceId: agent.voiceId ?? undefined,
+      voiceName: agent.voiceName ?? undefined,
+      voiceProvider: agent.voiceProvider ?? undefined,
+      systemPrompt: agent.systemPrompt ?? undefined,
+      userPrompt: agent.userPrompt ?? undefined,
+      firstMessage: agent.firstMessage ?? undefined,
+      assignedPhoneNumberId: agent.assignedPhoneNumberId ?? undefined,
+      callForwardingNumber: agent.callForwardingNumber ?? undefined,
+      callForwardingEnabled: agent.callForwardingEnabled ?? false,
+      agentType: agent.agentType ?? undefined,
+      temperature: agent.temperature ?? 0.7,
+      maxDuration: agent.maxDuration ?? 600,
+      maxTokens: agent.maxTokens ?? 150,
+      knowledgeBaseIds: agent.knowledgeBaseIds ?? undefined,
+    };
+    setFormInitialValues(formValues);
     setSelectedAgent(agent);
     setIsDialogOpen(true);
   };
@@ -319,7 +342,8 @@ export default function AIAgents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
       setIsDialogOpen(false);
-      form.reset();
+      setSelectedAgent(null);
+      setFormInitialValues(undefined);
       toast({
         title: "Success",
         description: "AI Agent created successfully",
@@ -439,9 +463,9 @@ export default function AIAgents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
-      setIsEditDialogOpen(false);
+      setIsDialogOpen(false);
       setSelectedAgent(null);
-      form.reset();
+      setFormInitialValues(undefined);
       toast({
         title: "Success",
         description: "AI Agent updated successfully",
@@ -776,7 +800,7 @@ export default function AIAgents() {
         initialValues={formInitialValues}
         onSubmit={handleSubmit}
         mode={dialogMode}
-        loading={dialogMode === "edit" ? updateMutation.isLoading : createMutation.isLoading}
+        loading={dialogMode === "edit" ? updateMutation.isPending : createMutation.isPending}
         agentFormSchema={agentFormSchema}
         models={bolnaModels}
         voices={bolnaVoices}

@@ -141,7 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const clientData: CreateAiAgentInput = createAiAgentSchema.parse(req.body);
       
       // Append username/email to agent name for Bolna
-      const userIdentifier = user.username || user.email || user.id;
+      const userIdentifier = user.email || user.firstName || user.id;
       const agentData: InsertAiAgent = {
         ...clientData,
         organizationId: user.organizationId,
@@ -1348,7 +1348,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
         category: category || 'document',
         description: description || `Uploaded PDF: ${pdfFileName}` + (converted ? ' (converted from original)' : ''),
         fileUrl: req.file.filename || pdfFileName,
-        externalId: bolnaKB.rag_id, // Store Bolna's knowledge base ID
+        bolnaKbId: bolnaKB.rag_id, // Store Bolna's knowledge base ID
         status: 'active',
         tags: ['bolna', 'pdf', 'knowledge-base'],
         metadata: {
@@ -1435,7 +1435,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
             category: category || 'document',
             description: description || `Bulk uploaded PDF: ${file.originalname}`,
             fileUrl: file.filename || file.originalname,
-            externalId: bolnaKB.rag_id,
+            bolnaKbId: bolnaKB.rag_id,
             status: 'active',
             tags: ['bolna', 'pdf', 'knowledge-base', 'batch-upload'],
             metadata: {
@@ -3092,10 +3092,12 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
 
   // Helper functions to emit real-time updates
   const emitCallUpdate = (organizationId: string, call: any) => {
+    console.log(`📡 [WebSocket] Emitting call:updated to org:${organizationId}, callId: ${call?.id}, status: ${call?.status}`);
     io.to(`org:${organizationId}`).emit('call:updated', call);
   };
 
   const emitCallCreated = (organizationId: string, call: any) => {
+    console.log(`📡 [WebSocket] Emitting call:created to org:${organizationId}, callId: ${call?.id}`);
     io.to(`org:${organizationId}`).emit('call:created', call);
   };
 
