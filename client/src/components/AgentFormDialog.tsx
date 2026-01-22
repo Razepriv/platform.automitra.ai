@@ -331,7 +331,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             </FormControl>
                             <SelectContent>
                               {models.map((m) => (
-                                <SelectItem key={m.id || m.name} value={m.name || ""}>
+                                <SelectItem key={m.id || m.name} value={m.name || "_unknown_"}>
                                   {m.name}
                                 </SelectItem>
                               ))}
@@ -438,7 +438,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             <SelectContent>
                               <SelectItem value="_none_">Select Voice</SelectItem>
                               {voices.map((v) => (
-                                <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || ""}>
+                                <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || "_unknown_"}>
                                   {v.voice_name || v.name}
                                 </SelectItem>
                               ))}
