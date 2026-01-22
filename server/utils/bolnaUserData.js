@@ -20,4 +20,4 @@ function buildBolnaUserData({ callId, leadId, contactName, organizationId, extra
   return userData;
 }
 
-export { buildBolnaUserData };
+module.exports = { buildBolnaUserData };
