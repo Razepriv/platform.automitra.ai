@@ -2592,20 +2592,35 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
                       organizationId: user.organizationId,
                       agentId: agent.id,
                       leadId: lead.id,
-                      recipientNumber: lead.phone,
-                      fromNumber: fromPhoneNumber,
+                      contactName: lead.name,
+                      contactPhone: lead.phone,
                       bolnaCallId: callResponse.execution_id || callResponse.call_id,
                       status: 'initiated',
                       direction: 'outbound',
+                      startedAt: new Date(),
                       metadata: {
                         bulkUpload: true,
                         uploadedAt: new Date().toISOString(),
+                        fromPhoneNumber,
                       },
                     });
 
                     // Emit call created
                     if ((app as any).emitCallCreated) {
                       (app as any).emitCallCreated(user.organizationId, callRecord);
+                    }
+
+                    // Start automatic polling for call status updates
+                    const bolnaId = callResponse.execution_id || callResponse.call_id;
+                    if (bolnaId) {
+                      console.log(`[Bulk Lead Upload] Starting call poller for ${bolnaId}`);
+                      startCallPolling(
+                        bolnaId,
+                        callRecord.id,
+                        user.organizationId,
+                        (app as any).emitCallUpdate,
+                        (app as any).emitMetricsUpdate
+                      );
                     }
 
                     callsInitiated++;

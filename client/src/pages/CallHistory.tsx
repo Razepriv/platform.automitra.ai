@@ -172,18 +172,24 @@ export default function CallHistory() {
   // Real-time call updates via WebSocket
   useWebSocketEvent<Call>('call:created', useCallback((newCall: Call) => {
     console.log('[CallHistory] Received call:created', newCall);
-    queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
+    // Update both query key patterns to ensure data is refreshed
+    queryClient.setQueryData(['/api/calls', user?.id], (oldData: Call[] = []) => {
+      // Avoid duplicates
+      if (oldData.some(c => c.id === newCall.id)) return oldData;
       return [newCall, ...oldData];
     });
+    // Also invalidate to ensure fresh data
+    queryClient.invalidateQueries({ queryKey: ['/api/calls'] });
     toast({
       title: "New call initiated",
       description: `Call to ${newCall.contactName || newCall.contactPhone} has been started.`,
     });
-  }, [toast]));
+  }, [toast, user?.id]));
 
   useWebSocketEvent<Call>('call:updated', useCallback((updatedCall: Call) => {
     console.log('[CallHistory] Received call:updated', updatedCall);
-    queryClient.setQueryData(['/api/calls'], (oldData: Call[] = []) => {
+    // Update with correct query key including user ID
+    queryClient.setQueryData(['/api/calls', user?.id], (oldData: Call[] = []) => {
       return oldData.map(call => 
         call.id === updatedCall.id ? updatedCall : call
       );
@@ -194,14 +200,25 @@ export default function CallHistory() {
       current && current.id === updatedCall.id ? updatedCall : current
     );
     
-    // Show notification for completed calls
+    // Show notification for status changes
     if (updatedCall.status === 'completed') {
       toast({
         title: "Call completed",
         description: `Call with ${updatedCall.contactName || updatedCall.contactPhone} has ended. Duration: ${formatDuration(updatedCall.duration)}`,
       });
+    } else if (updatedCall.status === 'in_progress') {
+      toast({
+        title: "Call connected",
+        description: `Call with ${updatedCall.contactName || updatedCall.contactPhone} is now in progress.`,
+      });
+    } else if (updatedCall.status === 'failed') {
+      toast({
+        title: "Call failed",
+        description: `Call with ${updatedCall.contactName || updatedCall.contactPhone} could not connect.`,
+        variant: "destructive",
+      });
     }
-  }, [toast]));
+  }, [toast, user?.id]));
 
   const { data: agents = [] } = useQuery<AiAgent[]>({
     queryKey: ["/api/ai-agents"],
@@ -715,9 +732,17 @@ export default function CallHistory() {
   );
 }
 
+// Bolna details type
+interface BolnaCallDetailsData {
+  transcript?: string;
+  recording_url?: string;
+  duration?: number;
+  status?: string;
+}
+
 // Separate component to fetch Bolna details
 function BolnaCallDetails({ callId, call }: { callId: string; call: Call }) {
-  const { data: bolnaDetails, isLoading } = useQuery({
+  const { data: bolnaDetails, isLoading } = useQuery<BolnaCallDetailsData>({
     queryKey: [`/api/calls/${callId}/bolna-details`],
     enabled: !!call.bolnaCallId,
   });
