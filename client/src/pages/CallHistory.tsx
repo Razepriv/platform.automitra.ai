@@ -78,12 +78,19 @@ function getStatusBadgeVariant(status: string): "default" | "secondary" | "destr
     case "in-progress":
     case "ringing":
     case "answered":
+    case "connected":
       return "secondary";
     case "failed":
     case "busy":
     case "no-answer":
+    case "no_answer":
+    case "not-connected":
+    case "not_connected":
+    case "declined":
+    case "unreachable":
       return "destructive";
     case "cancelled":
+    case "canceled":
       return "outline";
     case "initiated":
     case "scheduled":
@@ -95,20 +102,27 @@ function getStatusBadgeVariant(status: string): "default" | "secondary" | "destr
 
 function getStatusIcon(status: string) {
   const statusLower = status?.toLowerCase();
-  if (statusLower === "in_progress" || statusLower === "in-progress" || statusLower === "answered") {
+  if (statusLower === "in_progress" || statusLower === "in-progress" || 
+      statusLower === "answered" || statusLower === "connected") {
     return <Phone className="w-3 h-3 animate-pulse" />;
   }
-  if (statusLower === "ringing") {
+  if (statusLower === "ringing" || statusLower === "calling") {
     return <PhoneCall className="w-3 h-3 animate-bounce" />;
   }
   if (statusLower === "completed") {
     return <PhoneForwarded className="w-3 h-3" />;
   }
-  if (statusLower === "failed" || statusLower === "busy" || statusLower === "no-answer") {
+  if (statusLower === "failed" || statusLower === "busy" || 
+      statusLower === "no-answer" || statusLower === "no_answer" ||
+      statusLower === "not-connected" || statusLower === "not_connected" ||
+      statusLower === "declined" || statusLower === "unreachable") {
     return <PhoneOff className="w-3 h-3" />;
   }
   if (statusLower === "initiated" || statusLower === "scheduled") {
     return <Clock className="w-3 h-3" />;
+  }
+  if (statusLower === "cancelled" || statusLower === "canceled") {
+    return <PhoneOff className="w-3 h-3" />;
   }
   return null;
 }
@@ -512,10 +526,15 @@ export default function CallHistory() {
                       {call.agentId ? (agentMap.get(call.agentId) || call.agentId) : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={getStatusBadgeVariant(call.status)} data-testid={`badge-status-${call.id}`} className="flex items-center gap-1 w-fit">
-                        {getStatusIcon(call.status)}
-                        {call.status.replace(/_/g, ' ').replace(/-/g, ' ')}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={getStatusBadgeVariant(call.status)} data-testid={`badge-status-${call.id}`} className="flex items-center gap-1 w-fit">
+                          {getStatusIcon(call.status)}
+                          {call.status.replace(/_/g, ' ').replace(/-/g, ' ')}
+                        </Badge>
+                        {call.metadata && (call.metadata as any).isVoicemail && (
+                          <span className="text-xs" title="Voicemail">📧</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell data-testid={`text-duration-${call.id}`}>
                       <div className="flex items-center gap-1">
@@ -716,10 +735,17 @@ function BolnaCallDetails({ callId, call }: { callId: string; call: Call }) {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1">Status</h4>
-                  <Badge variant={getStatusBadgeVariant(call.status)} data-testid="dialog-status" className="flex items-center gap-1 w-fit">
-                    {getStatusIcon(call.status)}
-                    {call.status.replace(/_/g, ' ').replace(/-/g, ' ')}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={getStatusBadgeVariant(call.status)} data-testid="dialog-status" className="flex items-center gap-1 w-fit">
+                      {getStatusIcon(call.status)}
+                      {call.status.replace(/_/g, ' ').replace(/-/g, ' ')}
+                    </Badge>
+                    {call.metadata && (call.metadata as any).isVoicemail && (
+                      <Badge variant="outline" className="text-xs">
+                        📧 Voicemail
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-1">Duration</h4>

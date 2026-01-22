@@ -789,19 +789,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Determine status based on Bolna's status field or conversation_duration
       let normalizedStatus = call.status;
+      let isVoicemail = false;
       
       if (bolnaStatus) {
-        const statusLower = bolnaStatus.toLowerCase();
-        if (statusLower === 'ringing') {
+        const statusLower = bolnaStatus.toLowerCase().replace(/[_\s-]/g, ''); // normalize separators
+        
+        // Map Bolna status to our internal status
+        if (statusLower === 'ringing' || statusLower === 'calling') {
           normalizedStatus = 'ringing';
-        } else if (statusLower === 'answered' || statusLower === 'in-progress' || statusLower === 'ongoing') {
+        } 
+        else if (statusLower === 'connected' || statusLower === 'answered' || 
+                 statusLower === 'inprogress' || statusLower === 'ongoing' ||
+                 statusLower === 'active' || statusLower === 'live') {
           normalizedStatus = 'in_progress';
-        } else if (statusLower === 'call-disconnected' || statusLower === 'ended' || statusLower === 'completed') {
+        } 
+        else if (statusLower === 'calldisconnected' || statusLower === 'disconnected' || 
+                 statusLower === 'ended' || statusLower === 'completed' ||
+                 statusLower === 'hangup') {
           normalizedStatus = 'completed';
-        } else if (statusLower === 'failed' || statusLower === 'no-answer' || statusLower === 'busy') {
+        } 
+        else if (statusLower === 'failed' || statusLower === 'noanswer' || 
+                 statusLower === 'notconnected' || statusLower === 'busy' ||
+                 statusLower === 'declined' || statusLower === 'unreachable' ||
+                 statusLower === 'error' || statusLower === 'timeout') {
           normalizedStatus = 'failed';
+        } 
+        else if (statusLower === 'voicemail' || statusLower === 'vm') {
+          // Treat voicemail as completed (call went through to voicemail)
+          normalizedStatus = 'completed';
+          isVoicemail = true;
         }
-        console.log(`[Bolna Webhook] Status mapped: ${bolnaStatus} -> ${normalizedStatus}`);
+        else if (statusLower === 'cancelled' || statusLower === 'canceled') {
+          normalizedStatus = 'cancelled';
+        }
+        else if (statusLower === 'initiated' || statusLower === 'queued') {
+          normalizedStatus = 'initiated';
+        }
+        
+        console.log(`[Bolna Webhook] Status mapped: ${bolnaStatus} -> ${normalizedStatus}${isVoicemail ? ' (voicemail)' : ''}`);
       }
       
       // If we have conversation_duration > 0, the call is completed
@@ -855,9 +880,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`   - Cost: ${total_cost !== undefined ? '$' + total_cost : 'not provided'}`);
       
       // Store additional metadata if provided
-      if (call_details || metadata) {
+      if (call_details || metadata || isVoicemail) {
         updates.metadata = {
           ...(call.metadata as any || {}),
+          ...(isVoicemail && { isVoicemail: true, originalStatus: bolnaStatus }),
           call_details,
           bolna_metadata: metadata,
         };
