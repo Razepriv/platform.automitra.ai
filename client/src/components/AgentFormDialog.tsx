@@ -20,7 +20,8 @@ import {
   Phone, 
   Wrench, 
   BarChart3, 
-  PhoneIncoming 
+  PhoneIncoming,
+  Loader2
 } from "lucide-react";
 
 // AgentFormValues is now provided by the parent (AIAgents.tsx) via props, so we use 'any' for generic typing here
@@ -57,14 +58,30 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState("basic");
   
+  // Debug logging
+  useEffect(() => {
+    if (open) {
+      console.log("📊 AgentFormDialog Data:", {
+        models: models.length,
+        voices: voices.length,
+        providers: providers.length,
+        phoneNumbers: phoneNumbers.length,
+        knowledgeBaseItems: knowledgeBaseItems.length
+      });
+      console.log("Models:", models);
+      console.log("Voices:", voices);
+      console.log("Providers:", providers);
+    }
+  }, [open, models, voices, providers, phoneNumbers, knowledgeBaseItems]);
+  
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentFormSchema),
     defaultValues: {
       name: "",
       description: "",
-      model: models[0]?.name || "gpt-4",
+      model: models.length > 0 ? models[0].name : "gpt-4",
       language: "en-US",
-      provider: providers[0] || "azuretts",
+      provider: providers.length > 0 ? providers[0] : "azuretts",
       temperature: 0.7,
       maxDuration: 600,
       maxTokens: 150,
@@ -75,6 +92,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       backchannelingMessageGap: 5,
       backchannelingStartDelay: 5,
       callTerminate: 90,
+      webhookUrl: "https://platform.automitra.ai/api/webhooks/bolna/call-status",
       ...initialValues,
     },
     values: initialValues,
@@ -203,21 +221,27 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="_none_">Select Number</SelectItem>
-                              {phoneNumbers.map((n) => (
-                                <SelectItem key={n.id} value={n.id}>
-                                  {n.number}
+                              {phoneNumbers.length === 0 ? (
+                                <SelectItem value="_empty_" disabled>
+                                  <span className="text-muted-foreground">No phone numbers available</span>
                                 </SelectItem>
-                              ))}
+                              ) : (
+                                phoneNumbers.map((n) => (
+                                  <SelectItem key={n.id} value={n.id}>
+                                    {n.number}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormDescription>
-                            {phoneNumbers.length === 0 ? "No phone numbers available. They will be synced automatically." : "Select a phone number for this agent"}
+                            {phoneNumbers.length === 0 ? "No phone numbers available. They will be synced automatically." : `Select a phone number for this agent (${phoneNumbers.length} available)`}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-
+                                        
                     <FormField
                       control={form.control}
                       name="knowledgeBaseIds"
@@ -232,15 +256,21 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="_none_">None</SelectItem>
-                              {knowledgeBaseItems.map((kb) => (
-                                <SelectItem key={kb.id} value={kb.id}>
-                                  {kb.title}
+                              {knowledgeBaseItems.length === 0 ? (
+                                <SelectItem value="_empty_" disabled>
+                                  <span className="text-muted-foreground">No knowledge bases available</span>
                                 </SelectItem>
-                              ))}
+                              ) : (
+                                knowledgeBaseItems.map((kb) => (
+                                  <SelectItem key={kb.id} value={kb.id}>
+                                    {kb.title}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormDescription>
-                            {knowledgeBaseItems.length === 0 ? "No knowledge bases available" : "Optional: Link a knowledge base to this agent"}
+                            {knowledgeBaseItems.length === 0 ? "No knowledge bases available" : `Optional: Link a knowledge base to this agent (${knowledgeBaseItems.length} available)`}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -330,11 +360,20 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {models.map((m) => (
-                                <SelectItem key={m.id || m.name} value={m.name || "_unknown_"}>
-                                  {m.name}
+                              {models.length === 0 ? (
+                                <SelectItem value="_loading_" disabled>
+                                  <div className="flex items-center gap-2">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Loading models...
+                                  </div>
                                 </SelectItem>
-                              ))}
+                              ) : (
+                                models.map((m) => (
+                                  <SelectItem key={m.id || m.name} value={m.name || "_unknown_"}>
+                                    {m.name}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormDescription>Choose the language model</FormDescription>
@@ -411,11 +450,20 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {providers.map((p) => (
-                                <SelectItem key={p} value={p}>
-                                  {p}
+                              {providers.length === 0 ? (
+                                <SelectItem value="_loading_" disabled>
+                                  <div className="flex items-center gap-2">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Loading providers...
+                                  </div>
                                 </SelectItem>
-                              ))}
+                              ) : (
+                                providers.map((p) => (
+                                  <SelectItem key={p} value={p}>
+                                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -435,17 +483,29 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select Voice" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[300px]">
                               <SelectItem value="_none_">Select Voice</SelectItem>
-                              {voices.map((v) => (
-                                <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || "_unknown_"}>
-                                  {v.voice_name || v.name}
+                              {voices.length === 0 ? (
+                                <SelectItem value="_loading_" disabled>
+                                  <div className="flex items-center gap-2">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Loading voices...
+                                  </div>
                                 </SelectItem>
-                              ))}
+                              ) : (
+                                voices.map((v) => (
+                                  <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || "_unknown_"}>
+                                    <div className="flex flex-col">
+                                      <span>{v.voice_name || v.name}</span>
+                                      {v.provider && <span className="text-xs text-muted-foreground">{v.provider}</span>}
+                                    </div>
+                                  </SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                           <FormDescription>
-                            Choose the voice for your AI agent
+                            Choose the voice for your AI agent ({voices.length} voices available)
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
