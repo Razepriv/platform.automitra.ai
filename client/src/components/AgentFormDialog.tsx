@@ -195,14 +195,14 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Phone Number</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <Select onValueChange={(value) => field.onChange(value === "_none_" ? "" : value)} value={field.value || "_none_"}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select Number" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="">Select Number</SelectItem>
+                              <SelectItem value="_none_">Select Number</SelectItem>
                               {phoneNumbers.map((n) => (
                                 <SelectItem key={n.id} value={n.id}>
                                   {n.number}
@@ -224,14 +224,14 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Knowledge Base</FormLabel>
-                          <Select onValueChange={(value) => field.onChange([value])} value={field.value?.[0] || ""}>
+                          <Select onValueChange={(value) => field.onChange(value === "_none_" ? [] : [value])} value={field.value?.[0] || "_none_"}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select knowledge base" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="">None</SelectItem>
+                              <SelectItem value="_none_">None</SelectItem>
                               {knowledgeBaseItems.map((kb) => (
                                 <SelectItem key={kb.id} value={kb.id}>
                                   {kb.title}
@@ -429,14 +429,14 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Voice</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <Select onValueChange={(value) => field.onChange(value === "_none_" ? "" : value)} value={field.value || "_none_"}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select Voice" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="">Select Voice</SelectItem>
+                              <SelectItem value="_none_">Select Voice</SelectItem>
                               {voices.map((v) => (
                                 <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || ""}>
                                   {v.voice_name || v.name}
