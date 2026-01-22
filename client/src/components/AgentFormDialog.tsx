@@ -21,7 +21,8 @@ import {
   Wrench, 
   BarChart3, 
   PhoneIncoming,
-  Loader2
+  Loader2,
+  Plus
 } from "lucide-react";
 
 // AgentFormValues is now provided by the parent (AIAgents.tsx) via props, so we use 'any' for generic typing here
@@ -343,88 +344,232 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
               <TabsContent value="llm" className="space-y-4 mt-4">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Language Model Configuration</CardTitle>
+                    <CardTitle>Choose LLM Model</CardTitle>
                     <CardDescription>Configure the AI model settings</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="llmProvider"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>LLM Provider</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || "openai"}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select provider" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="openai">Openai</SelectItem>
+                                <SelectItem value="anthropic">Anthropic</SelectItem>
+                                <SelectItem value="groq">Groq</SelectItem>
+                                <SelectItem value="together">Together AI</SelectItem>
+                                <SelectItem value="anyscale">Anyscale</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="model"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Model</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select model" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {models.length === 0 ? (
+                                  <SelectItem value="_loading_" disabled>
+                                    <div className="flex items-center gap-2">
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      Loading models...
+                                    </div>
+                                  </SelectItem>
+                                ) : (
+                                  models.map((m) => (
+                                    <SelectItem key={m.id || m.name} value={m.name || "_unknown_"}>
+                                      {m.name}
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>Choose the language model</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Model Parameters</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="maxTokens"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between mb-2">
+                              <FormLabel>Tokens generated on each LLM output</FormLabel>
+                              <span className="text-sm font-semibold">{field.value || 150}</span>
+                            </div>
+                            <FormControl>
+                              <Slider
+                                min={50}
+                                max={2000}
+                                step={10}
+                                value={[field.value || 150]}
+                                onValueChange={(vals) => field.onChange(vals[0])}
+                                className="w-full"
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              Increasing tokens enables longer responses to be queued for speech generation but increases latency
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="temperature"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between mb-2">
+                              <FormLabel>Temperature</FormLabel>
+                              <span className="text-sm font-semibold">{field.value || 0.7}</span>
+                            </div>
+                            <FormControl>
+                              <Slider
+                                min={0}
+                                max={2}
+                                step={0.1}
+                                value={[field.value || 0.7]}
+                                onValueChange={(vals) => field.onChange(vals[0])}
+                                className="w-full"
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              Increasing temperature enables heightened creativity, but increases chance of deviation from prompt
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <Separator />
+
                     <FormField
                       control={form.control}
-                      name="model"
+                      name="knowledgeBaseIds"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Model</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <FormLabel>Add knowledge base (Multi-select)</FormLabel>
+                          <Select onValueChange={(value) => {
+                            const current = field.value || [];
+                            if (value === "_none_") {
+                              field.onChange([]);
+                            } else if (current.includes(value)) {
+                              field.onChange(current.filter((id: string) => id !== value));
+                            } else {
+                              field.onChange([...current, value]);
+                            }
+                          }} value={field.value?.[0] || "_none_"}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select model" />
+                                <SelectValue placeholder="Select knowledge bases">
+                                  {field.value && field.value.length > 0 
+                                    ? `${field.value.length} selected` 
+                                    : "Select knowledge bases"}
+                                </SelectValue>
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {models.length === 0 ? (
-                                <SelectItem value="_loading_" disabled>
-                                  <div className="flex items-center gap-2">
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    Loading models...
-                                  </div>
+                              <SelectItem value="_none_">None</SelectItem>
+                              {knowledgeBaseItems.length === 0 ? (
+                                <SelectItem value="_empty_" disabled>
+                                  <span className="text-muted-foreground">No knowledge bases available</span>
                                 </SelectItem>
                               ) : (
-                                models.map((m) => (
-                                  <SelectItem key={m.id || m.name} value={m.name || "_unknown_"}>
-                                    {m.name}
+                                knowledgeBaseItems.map((kb) => (
+                                  <SelectItem key={kb.id} value={kb.id}>
+                                    <div className="flex items-center gap-2">
+                                      {field.value?.includes(kb.id) && <span>✓</span>}
+                                      {kb.title}
+                                    </div>
                                   </SelectItem>
                                 ))
                               )}
                             </SelectContent>
                           </Select>
-                          <FormDescription>Choose the language model</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="temperature"
-                      render={({ field }) => (
-                        <FormItem>
-                          <div className="flex items-center justify-between">
-                            <FormLabel>Temperature</FormLabel>
-                            <span className="text-sm text-muted-foreground">{field.value}</span>
-                          </div>
-                          <FormControl>
-                            <Slider
-                              min={0}
-                              max={2}
-                              step={0.1}
-                              value={[field.value || 0.7]}
-                              onValueChange={(vals) => field.onChange(vals[0])}
-                              className="w-full"
-                            />
-                          </FormControl>
+                          {field.value && field.value.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {field.value.map((id: string) => {
+                                const kb = knowledgeBaseItems.find(k => k.id === id);
+                                return kb ? (
+                                  <div key={id} className="flex items-center gap-1 bg-secondary text-secondary-foreground px-2 py-1 rounded text-xs">
+                                    {kb.title}
+                                    <button
+                                      type="button"
+                                      onClick={() => field.onChange(field.value.filter((kbId: string) => kbId !== id))}
+                                      className="ml-1 hover:text-destructive"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
                           <FormDescription>
-                            Controls randomness (0 = focused, 2 = creative)
+                            {knowledgeBaseItems.length === 0 ? "No knowledge bases available" : `Select one or more knowledge bases (${knowledgeBaseItems.length} available)`}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
 
-                    <FormField
-                      control={form.control}
-                      name="maxTokens"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Tokens</FormLabel>
-                          <FormControl>
-                            <Input {...field} type="number" min="50" max="2000" />
-                          </FormControl>
-                          <FormDescription>
-                            Maximum response length per message
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <FormLabel className="text-base">Add FAQs & Guardrail</FormLabel>
+                        <a href="https://docs.bolna.ai" target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
+                          DOCS ↗
+                        </a>
+                      </div>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => {
+                          // TODO: Open FAQs & Guardrail dialog
+                          alert("FAQs & Guardrail configuration coming soon!");
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add a new block for FAQs & Guardrails
+                      </Button>
+                      <FormDescription className="text-xs">
+                        Define frequently asked questions and conversation guardrails
+                      </FormDescription>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
