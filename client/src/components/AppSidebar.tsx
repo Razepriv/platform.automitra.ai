@@ -15,6 +15,7 @@ import {
   Command,
   LifeBuoy,
   Send,
+  Upload,
 } from "lucide-react";
 import {
   Sidebar,
@@ -103,6 +104,11 @@ export function AppSidebar() {
       title: "Campaigns",
       url: "/campaigns",
       icon: Send,
+    },
+    {
+      title: "Batches",
+      url: "/batches",
+      icon: Upload,
     },
   ];
 

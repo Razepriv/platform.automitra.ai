@@ -29,6 +29,7 @@ import Analytics from "@/pages/Analytics";
 import Billing from "@/pages/Billing";
 import Settings from "@/pages/Settings";
 import CampaignsPage from "@/pages/campaigns/index";
+import BatchesPage from "@/pages/Batches";
 
 function UnauthenticatedRouter() {
   return (
@@ -58,6 +59,7 @@ function AuthenticatedRouter() {
       <Route path="/pipelines" component={Pipelines} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/campaigns" component={CampaignsPage} />
+      <Route path="/batches" component={BatchesPage} />
       <Route path="/knowledge-base" component={KnowledgeBase} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/billing" component={Billing} />

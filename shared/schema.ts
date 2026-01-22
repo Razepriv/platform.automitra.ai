@@ -21,6 +21,60 @@ export const insertAgentTemplateSchema = createInsertSchema(agentTemplates).omit
 
 export type InsertAgentTemplate = z.infer<typeof insertAgentTemplateSchema>;
 export type AgentTemplate = typeof agentTemplates.$inferSelect;
+
+// Batches table - stores Bolna batch campaign records
+export const batches = pgTable("batches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  batchId: varchar("batch_id").notNull().unique(), // Bolna batch ID
+  agentId: varchar("agent_id").notNull(),
+  
+  // Batch details
+  fileName: text("file_name").notNull(),
+  validContacts: integer("valid_contacts").notNull().default(0),
+  totalContacts: integer("total_contacts").notNull().default(0),
+  fromPhoneNumber: varchar("from_phone_number", { length: 20 }),
+  
+  // Status
+  status: varchar("status", { length: 50 }).notNull().default('created'), // created, scheduled, queued, executed, stopped
+  executionStatus: jsonb("execution_status"), // { completed: 1, ringing: 10, in_progress: 15 }
+  
+  // Scheduling
+  scheduledAt: timestamp("scheduled_at"),
+  
+  // Metadata
+  webhookUrl: text("webhook_url"),
+  metadata: jsonb("metadata"),
+  
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_batches_org").on(table.organizationId),
+  index("idx_batches_agent").on(table.agentId),
+  index("idx_batches_status").on(table.status),
+  index("idx_batches_bolna_id").on(table.batchId),
+]);
+
+export const batchesRelations = relations(batches, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [batches.organizationId],
+    references: [organizations.id],
+  }),
+  agent: one(aiAgents, {
+    fields: [batches.agentId],
+    references: [aiAgents.id],
+  }),
+}));
+
+export const insertBatchSchema = createInsertSchema(batches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBatch = z.infer<typeof insertBatchSchema>;
+export type Batch = typeof batches.$inferSelect;
 import { sql } from 'drizzle-orm';
 import {
   index,
@@ -473,7 +527,7 @@ export const knowledgeBase = pgTable("knowledge_base", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
   agentId: varchar("agent_id"),
-  
+
   // Document details
   title: text("title").notNull(),
   content: text("content").notNull(),
@@ -481,14 +535,17 @@ export const knowledgeBase = pgTable("knowledge_base", {
   category: varchar("category", { length: 100 }),
   description: text("description"),
   tags: text("tags").array(),
-  
+
   // File/URL references
   fileUrl: text("file_url"),
   sourceUrl: text("source_url"),
-  
+
+  // Bolna RAG ID
+  bolnaKbId: varchar("bolna_kb_id"),
+
   // Status
   status: varchar("status", { length: 50 }).notNull().default('active'),
-  
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
