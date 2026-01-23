@@ -8,9 +8,11 @@ module.exports = {
   },
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js', '<rootDir>/client/src/__tests__/setupTests.ts'],
-  globals: {
-    'ts-jest': {
-      useESM: true
-    }
+  'ts-jest': {
+    useESM: true
+  },
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/client/src/$1',
+    '^@shared/(.*)$': '<rootDir>/shared/$1'
   }
 };

@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { queryClient } from "@/lib/queryClient";
-import { useSocketEvent } from "@/lib/useSocket";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
 
 export default function Settings() {
   const { user } = useAuth();
@@ -48,61 +48,62 @@ export default function Settings() {
   const [isEnablingCallAlerts, setIsEnablingCallAlerts] = useState(false);
   const [isEnablingDailySummary, setIsEnablingDailySummary] = useState(false);
 
-  const { data: phoneNumbers = [] } = useQuery({
+  const { data: phoneNumbers = [] } = useQuery<any[]>({
     queryKey: ["/api/phone-numbers"],
   });
 
-  const { data: aiAgents = [] } = useQuery({
+  const { data: aiAgents = [] } = useQuery<any[]>({
     queryKey: ["/api/ai-agents"],
   });
 
-  const { data: organization } = useQuery({
+  const { data: organization } = useQuery<any>({
     queryKey: ["/api/organization"],
-    onSuccess: (data) => {
-      if (data) {
-        setCompanyName(data.companyName || "");
-        setLogoUrl(data.logoUrl || "");
-        setPrimaryColor(data.primaryColor || "");
-      }
-    },
   });
+
+  useEffect(() => {
+    if (organization) {
+      setCompanyName(organization.companyName || "");
+      setLogoUrl(organization.logoUrl || "");
+      setPrimaryColor(organization.primaryColor || "");
+    }
+  }, [organization]);
 
 
   // Real-time updates for all settings-related entities
-  useSocketEvent('organization:updated', () => {
+  useWebSocketEvent('organization:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/organization'] });
   }, user?.organizationId);
 
-  useSocketEvent('phone:created', () => {
+  useWebSocketEvent('phone:created', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
   }, user?.organizationId);
 
-  useSocketEvent('phone:updated', () => {
+  useWebSocketEvent('phone:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/phone-numbers'] });
   }, user?.organizationId);
 
-  useSocketEvent('agent:created', () => {
+  useWebSocketEvent('agent:created', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
   }, user?.organizationId);
 
-  useSocketEvent('agent:updated', () => {
+  useWebSocketEvent('agent:updated', () => {
     queryClient.invalidateQueries({ queryKey: ['/api/ai-agents'] });
   }, user?.organizationId);
 
-  useSocketEvent('campaign:created', () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/campaigns-list'] });
+  useWebSocketEvent('campaign:created', () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
   }, user?.organizationId);
 
-  useSocketEvent('campaign:updated', () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/campaigns-list'] });
+  useWebSocketEvent('campaign:updated', () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
   }, user?.organizationId);
 
-  useSocketEvent('contact:created', () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+  useWebSocketEvent('contact:created', () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
   }, user?.organizationId);
 
-  useSocketEvent('contact:updated', () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+  useWebSocketEvent('contact:updated', () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
   }, user?.organizationId);
 
   const updateWhitelabelMutation = useMutation({
@@ -427,9 +428,9 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label>Logo Preview</Label>
                   <div className="border rounded-md p-4 bg-muted/50">
-                    <img 
-                      src={logoUrl} 
-                      alt="Logo preview" 
+                    <img
+                      src={logoUrl}
+                      alt="Logo preview"
                       className="h-12 object-contain"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';

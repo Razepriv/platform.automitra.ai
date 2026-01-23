@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Download, TrendingUp, Phone, Users, Target } from "lucide-react";
 import type { AnalyticsMetrics, CallMetrics, AgentPerformance } from "@shared/schema";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
+import { queryClient } from "@/lib/queryClient";
 
 export default function Analytics() {
   const { toast } = useToast();
@@ -28,7 +30,7 @@ export default function Analytics() {
     }
   }, [isAuthenticated, authLoading, toast]);
 
-  const { data: metrics, isLoading: metricsLoading} = useQuery<AnalyticsMetrics>({
+  const { data: metrics, isLoading: metricsLoading } = useQuery<AnalyticsMetrics>({
     queryKey: [`/api/analytics/metrics?timeRange=${timeRange}`],
   });
 
@@ -39,6 +41,19 @@ export default function Analytics() {
   const { data: agentPerformance, isLoading: agentPerformanceLoading } = useQuery<AgentPerformance[]>({
     queryKey: [`/api/analytics/agents?timeRange=${timeRange}`],
   });
+
+  // Real-time updates
+  useWebSocketEvent('call:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/analytics'] });
+  }, []));
+
+  useWebSocketEvent('lead:created', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/analytics'] });
+  }, []));
+
+  useWebSocketEvent('lead:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/analytics'] });
+  }, []));
 
   const isLoading = metricsLoading || callMetricsLoading || agentPerformanceLoading;
 

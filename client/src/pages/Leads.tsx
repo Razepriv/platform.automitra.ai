@@ -64,6 +64,10 @@ export default function Leads() {
     queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
   }, []));
 
+  useWebSocketEvent('lead:deleted', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
   const autoAssignMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/leads/auto-assign");

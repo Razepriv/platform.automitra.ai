@@ -10,26 +10,14 @@ import type { DashboardMetrics } from "@shared/schema";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  
+
   const { data: metrics, isLoading } = useQuery<DashboardMetrics>({
     queryKey: ['/api/dashboard/metrics'],
   });
 
   // Real-time updates via WebSocket
-  useWebSocketEvent('call:created', useCallback(() => {
-    console.log('[Dashboard] Received call:created event');
-    queryClient.invalidateQueries({ queryKey: ['/api/dashboard/metrics'] });
-  }, []));
+  // Real-time updates handled globally by WebSocketProvider
 
-  useWebSocketEvent('call:updated', useCallback((data: any) => {
-    console.log('[Dashboard] Received call:updated event', data);
-    queryClient.invalidateQueries({ queryKey: ['/api/dashboard/metrics'] });
-  }, []));
-
-  useWebSocketEvent('metrics:updated', useCallback((data: any) => {
-    console.log('[Dashboard] Received metrics:updated event', data);
-    queryClient.invalidateQueries({ queryKey: ['/api/dashboard/metrics'] });
-  }, []));
 
   const quickActions = [
     {
@@ -157,17 +145,17 @@ export default function Dashboard() {
           <p className="text-purple-50 text-lg max-w-2xl" data-testid="text-dashboard-subtitle">
             Here's what's happening with your AI Voice Agents today.
           </p>
-          
+
           <div className="mt-8 flex gap-4">
-            <Button 
+            <Button
               onClick={() => setLocation("/agents?action=create")}
               className="bg-white text-purple-600 hover:bg-purple-50 border-none shadow-md"
             >
               <Plus className="mr-2 h-4 w-4" />
               Create New Agent
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setLocation("/analytics")}
               className="bg-white/20 text-white border-white/40 hover:bg-white/30 backdrop-blur-sm"
             >
@@ -176,7 +164,7 @@ export default function Dashboard() {
             </Button>
           </div>
         </div>
-        
+
         {/* Decorative circles */}
         <div className="absolute top-0 right-0 -mt-20 -mr-20 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
         <div className="absolute bottom-0 right-20 -mb-20 h-64 w-64 rounded-full bg-orange-400/20 blur-3xl" />
@@ -216,7 +204,7 @@ export default function Dashboard() {
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
-              <div 
+              <div
                 key={action.testId}
                 onClick={action.action}
                 className="group cursor-pointer relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm transition-all hover:shadow-md border border-transparent hover:border-purple-100"

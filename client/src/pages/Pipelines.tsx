@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,19 @@ export default function Pipelines() {
   const { data: leads = [], isLoading } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
   });
+
+  // Real-time updates via WebSocket
+  useWebSocketEvent('lead:created', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
+  useWebSocketEvent('lead:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
+  useWebSocketEvent('lead:deleted', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ leadId, status }: { leadId: string; status: string }) => {
@@ -128,8 +142,8 @@ export default function Pipelines() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button 
-            onClick={() => autoAssignMutation.mutate()} 
+          <Button
+            onClick={() => autoAssignMutation.mutate()}
             disabled={autoAssignMutation.isPending}
             className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/20"
           >

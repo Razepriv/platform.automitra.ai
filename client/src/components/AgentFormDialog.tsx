@@ -12,14 +12,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
-import { 
-  FileText, 
-  Mic, 
-  Volume2, 
-  Settings, 
-  Phone, 
-  Wrench, 
-  BarChart3, 
+import {
+  FileText,
+  Mic,
+  Volume2,
+  Settings,
+  Phone,
+  Wrench,
+  BarChart3,
   PhoneIncoming,
   Loader2,
   Plus
@@ -58,7 +58,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
   knowledgeBaseItems,
 }) => {
   const [activeTab, setActiveTab] = useState("basic");
-  
+
   // Debug logging
   useEffect(() => {
     if (open) {
@@ -74,7 +74,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
       console.log("Providers:", providers);
     }
   }, [open, models, voices, providers, phoneNumbers, knowledgeBaseItems]);
-  
+
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentFormSchema),
     defaultValues: {
@@ -133,7 +133,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
             {mode === "edit" ? "Update the agent configuration and settings." : "Configure your new AI agent with voice, model, and behavior settings."}
           </DialogDescription>
         </DialogHeader>
-        
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -193,7 +193,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         </FormItem>
                       )}
                     />
-                    
+
                     <FormField
                       control={form.control}
                       name="description"
@@ -242,7 +242,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         </FormItem>
                       )}
                     />
-                                        
+
                     <FormField
                       control={form.control}
                       name="knowledgeBaseIds"
@@ -302,7 +302,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         </FormItem>
                       )}
                     />
-                    
+
                     <FormField
                       control={form.control}
                       name="userPrompt"
@@ -319,7 +319,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         </FormItem>
                       )}
                     />
-                    
+
                     <FormField
                       control={form.control}
                       name="firstMessage"
@@ -386,7 +386,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   <SelectValue placeholder="Select model" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="bg-white dark:bg-zinc-950 border-input">
                                 {models.length === 0 ? (
                                   <SelectItem value="_loading_" disabled>
                                     <div className="flex items-center gap-2">
@@ -396,7 +396,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   </SelectItem>
                                 ) : (
                                   models.map((m) => (
-                                    <SelectItem key={m.id || m.name} value={m.name || "_unknown_"}>
+                                    <SelectItem key={m.id || m.name} value={m.name || "_unknown_"} className="cursor-pointer">
                                       {m.name}
                                     </SelectItem>
                                   ))
@@ -494,8 +494,8 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select knowledge bases">
-                                  {field.value && field.value.length > 0 
-                                    ? `${field.value.length} selected` 
+                                  {field.value && field.value.length > 0
+                                    ? `${field.value.length} selected`
                                     : "Select knowledge bases"}
                                 </SelectValue>
                               </SelectTrigger>
@@ -554,9 +554,9 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                           DOCS ↗
                         </a>
                       </div>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        variant="outline"
                         className="w-full"
                         onClick={() => {
                           // TODO: Open FAQs & Guardrail dialog
@@ -594,7 +594,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select provider" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="bg-white dark:bg-zinc-950 border-input">
                               {providers.length === 0 ? (
                                 <SelectItem value="_loading_" disabled>
                                   <div className="flex items-center gap-2">
@@ -604,7 +604,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 </SelectItem>
                               ) : (
                                 providers.map((p) => (
-                                  <SelectItem key={p} value={p}>
+                                  <SelectItem key={p} value={p} className="cursor-pointer">
                                     {p.charAt(0).toUpperCase() + p.slice(1)}
                                   </SelectItem>
                                 ))
@@ -628,7 +628,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 <SelectValue placeholder="Select Voice" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent className="max-h-[300px]">
+                            <SelectContent className="max-h-[300px] bg-white dark:bg-zinc-950 border-input">
                               <SelectItem value="_none_">Select Voice</SelectItem>
                               {voices.length === 0 ? (
                                 <SelectItem value="_loading_" disabled>
@@ -639,9 +639,13 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                 </SelectItem>
                               ) : (
                                 voices.map((v) => (
-                                  <SelectItem key={v.voice_id || v.id} value={v.voice_id || v.id || "_unknown_"}>
-                                    <div className="flex flex-col">
-                                      <span>{v.voice_name || v.name}</span>
+                                  <SelectItem
+                                    key={v.voice_id || v.id}
+                                    value={v.voice_id || v.id || "_unknown_"}
+                                    className="cursor-pointer"
+                                  >
+                                    <div className="flex flex-col text-left">
+                                      <span className="font-medium text-foreground">{v.voice_name || v.name || "Unknown Voice"}</span>
                                       {v.provider && <span className="text-xs text-muted-foreground">{v.provider}</span>}
                                     </div>
                                   </SelectItem>
@@ -847,7 +851,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                   <CardContent className="space-y-6">
                     <div className="space-y-4">
                       <h4 className="text-sm font-semibold">Transcription Settings</h4>
-                      
+
                       <FormField
                         control={form.control}
                         name="transcriberProvider"
@@ -917,7 +921,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
 
                     <div className="space-y-4">
                       <h4 className="text-sm font-semibold">Interruption Handling</h4>
-                      
+
                       <FormField
                         control={form.control}
                         name="numberOfWordsForInterruption"
@@ -1016,7 +1020,7 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                   <CardContent className="space-y-6">
                     <div className="space-y-4">
                       <h4 className="text-sm font-semibold">Telephony Features</h4>
-                      
+
                       <FormField
                         control={form.control}
                         name="noiseCancellation"
@@ -1124,133 +1128,133 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                     <div className="space-y-4">
                       <h4 className="text-sm font-semibold">Call Duration & Timeouts</h4>
 
-                    <FormField
-                      control={form.control}
-                      name="maxDuration"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Call Duration (seconds)</FormLabel>
-                          <FormControl>
-                            <Input {...field} type="number" min="30" max="3600" />
-                          </FormControl>
-                          <FormDescription>
-                            Maximum length of a call in seconds
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="hangupAfterSilence"
-                      render={({ field }) => (
-                        <FormItem>
-                          <div className="flex items-center justify-between">
-                            <FormLabel>Hangup After Silence (seconds)</FormLabel>
-                            <span className="text-sm text-muted-foreground">{field.value || 10}</span>
-                          </div>
-                          <FormControl>
-                            <Slider
-                              min={5}
-                              max={60}
-                              step={5}
-                              value={[field.value || 10]}
-                              onValueChange={(vals) => field.onChange(vals[0])}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Auto-hangup after silence duration
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="callTerminate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <div className="flex items-center justify-between">
-                            <FormLabel>Call Terminate (seconds)</FormLabel>
-                            <span className="text-sm text-muted-foreground">{field.value || 90}</span>
-                          </div>
-                          <FormControl>
-                            <Slider
-                              min={30}
-                              max={300}
-                              step={10}
-                              value={[field.value || 90]}
-                              onValueChange={(vals) => field.onChange(vals[0])}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Maximum time before forced termination
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="hangupAfterLLMCall"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Hangup After LLM Call</FormLabel>
+                      <FormField
+                        control={form.control}
+                        name="maxDuration"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Max Call Duration (seconds)</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="number" min="30" max="3600" />
+                            </FormControl>
                             <FormDescription>
-                              Automatically end call after agent response
+                              Maximum length of a call in seconds
                             </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-                    <FormField
-                      control={form.control}
-                      name="voicemail"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Enable Voicemail</FormLabel>
+                      <FormField
+                        control={form.control}
+                        name="hangupAfterSilence"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between">
+                              <FormLabel>Hangup After Silence (seconds)</FormLabel>
+                              <span className="text-sm text-muted-foreground">{field.value || 10}</span>
+                            </div>
+                            <FormControl>
+                              <Slider
+                                min={5}
+                                max={60}
+                                step={5}
+                                value={[field.value || 10]}
+                                onValueChange={(vals) => field.onChange(vals[0])}
+                              />
+                            </FormControl>
                             <FormDescription>
-                              Leave voicemail if call goes unanswered
+                              Auto-hangup after silence duration
                             </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-                    <FormField
-                      control={form.control}
-                      name="callCancellationPrompt"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Call Cancellation Prompt</FormLabel>
-                          <FormControl>
-                            <Textarea {...field} placeholder="Message when call is cancelled" rows={2} />
-                          </FormControl>
-                          <FormDescription>
-                            Optional message to play when cancelling
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                      <FormField
+                        control={form.control}
+                        name="callTerminate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between">
+                              <FormLabel>Call Terminate (seconds)</FormLabel>
+                              <span className="text-sm text-muted-foreground">{field.value || 90}</span>
+                            </div>
+                            <FormControl>
+                              <Slider
+                                min={30}
+                                max={300}
+                                step={10}
+                                value={[field.value || 90]}
+                                onValueChange={(vals) => field.onChange(vals[0])}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Maximum time before forced termination
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="hangupAfterLLMCall"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Hangup After LLM Call</FormLabel>
+                              <FormDescription>
+                                Automatically end call after agent response
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="voicemail"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Enable Voicemail</FormLabel>
+                              <FormDescription>
+                                Leave voicemail if call goes unanswered
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="callCancellationPrompt"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Call Cancellation Prompt</FormLabel>
+                            <FormControl>
+                              <Textarea {...field} placeholder="Message when call is cancelled" rows={2} />
+                            </FormControl>
+                            <FormDescription>
+                              Optional message to play when cancelling
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -1406,10 +1410,10 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                         <FormItem>
                           <FormLabel>Webhook URL (Pre-configured)</FormLabel>
                           <FormControl>
-                            <Input 
-                              {...field} 
-                              disabled 
-                              placeholder="https://platform.automitra.ai/api/webhooks/bolna/call-status" 
+                            <Input
+                              {...field}
+                              disabled
+                              placeholder="https://platform.automitra.ai/api/webhooks/bolna/call-status"
                             />
                           </FormControl>
                           <FormDescription>

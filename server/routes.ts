@@ -5,7 +5,7 @@ import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 import Papa from "papaparse";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./supabaseAuth";
+import { setupAuth, isAuthenticated, sessionMiddleware } from "./supabaseAuth";
 import { generateAISummary, analyzeLeadQualification, generateMeetingSummary, matchLeadsToAgents } from "./openai";
 import { bolnaClient } from "./bolna";
 import { exotelClient } from "./exotel";
@@ -15,56 +15,58 @@ import type { InsertLead, InsertChannelPartner, InsertCampaign, InsertCall, Inse
 import { createAiAgentSchema, updateAiAgentSchema, createKnowledgeBaseSchema, updateKnowledgeBaseSchema, batches } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
+// @ts-ignore
+declare module 'pdfkit';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-    // Agent Template routes (user-specific)
+  // Agent Template routes (user-specific)
 
-    app.get('/api/agent-templates', isAuthenticated, async (req: any, res) => {
-      try {
-        const userId = req.user.claims.sub;
-        const templates = await getAgentTemplatesForUser(userId);
-        res.json(templates);
-      } catch (error) {
-        console.error('Error fetching agent templates:', error);
-        res.status(500).json({ message: 'Failed to fetch agent templates' });
-      }
-    });
+  app.get('/api/agent-templates', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const templates = await getAgentTemplatesForUser(userId);
+      res.json(templates);
+    } catch (error) {
+      console.error('Error fetching agent templates:', error);
+      res.status(500).json({ message: 'Failed to fetch agent templates' });
+    }
+  });
 
-    app.post('/api/agent-templates', isAuthenticated, async (req: any, res) => {
-      try {
-        const userId = req.user.claims.sub;
-        const template = { ...req.body, createdBy: userId, updatedAt: new Date() };
-        const created = await createAgentTemplate(template);
-        res.json(created);
-      } catch (error) {
-        console.error('Error creating agent template:', error);
-        res.status(500).json({ message: 'Failed to create agent template' });
-      }
-    });
+  app.post('/api/agent-templates', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const template = { ...req.body, createdBy: userId, updatedAt: new Date() };
+      const created = await createAgentTemplate(template);
+      res.json(created);
+    } catch (error) {
+      console.error('Error creating agent template:', error);
+      res.status(500).json({ message: 'Failed to create agent template' });
+    }
+  });
 
-    app.patch('/api/agent-templates/:id', isAuthenticated, async (req: any, res) => {
-      try {
-        const userId = req.user.claims.sub;
-        const updated = await updateAgentTemplate(req.params.id, userId, req.body);
-        res.json(updated);
-      } catch (error) {
-        console.error('Error updating agent template:', error);
-        res.status(500).json({ message: 'Failed to update agent template' });
-      }
-    });
+  app.patch('/api/agent-templates/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const updated = await updateAgentTemplate(req.params.id, userId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error('Error updating agent template:', error);
+      res.status(500).json({ message: 'Failed to update agent template' });
+    }
+  });
 
-    app.delete('/api/agent-templates/:id', isAuthenticated, async (req: any, res) => {
-      try {
-        const userId = req.user.claims.sub;
-        const success = await deleteAgentTemplate(req.params.id, userId);
-        res.json({ success });
-      } catch (error) {
-        console.error('Error deleting agent template:', error);
-        res.status(500).json({ message: 'Failed to delete agent template' });
-      }
-    });
+  app.delete('/api/agent-templates/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const success = await deleteAgentTemplate(req.params.id, userId);
+      res.json({ success });
+    } catch (error) {
+      console.error('Error deleting agent template:', error);
+      res.status(500).json({ message: 'Failed to delete agent template' });
+    }
+  });
   // Auth middleware
   await setupAuth(app);
 
@@ -139,7 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // Validate request body using strict schema that rejects organizationId
       const clientData: CreateAiAgentInput = createAiAgentSchema.parse(req.body);
-      
+
       // Append username/email to agent name for Bolna
       const userIdentifier = user.email || user.firstName || user.id;
       const agentData: InsertAiAgent = {
@@ -151,20 +153,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create agent in database first
       const agent = await storage.createAIAgent(agentData);
-      
+
       // Emit real-time update
       if ((app as any).emitAgentCreated) {
         (app as any).emitAgentCreated(user.organizationId, agent);
       }
-      
+
       // Auto-sync to Bolna in background (don't block response)
       if (agentData.voiceId && agentData.voiceProvider && agentData.voiceProvider !== 'all') {
         // Sync to Bolna asynchronously
         bolnaClient.createAgent(agent as any)
           .then(async (bolnaAgent) => {
             console.log(`✅ Agent ${agent.id} synced to Bolna with ID: ${bolnaAgent.agent_id}`);
-            console.log(`   Webhook URL configured: ${bolnaAgent.agent_config?.webhook_url || 'MISSING'}`);
-            if (!bolnaAgent.agent_config?.webhook_url) {
+            console.log(`   Webhook URL configured: ${(bolnaAgent as any).agent_config?.webhook_url || 'MISSING'}`);
+            if (!(bolnaAgent as any).agent_config?.webhook_url) {
               console.error(`❌ WARNING: Agent created in Bolna but webhook URL is NOT set!`);
               console.error(`   This means you will NOT receive real-time call updates!`);
             }
@@ -173,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               bolnaAgentId: bolnaAgent.agent_id,
               bolnaConfig: bolnaAgent as any,
             }).catch(err => console.error("Failed to update agent with Bolna ID:", err));
-            
+
             // Auto-setup inbound call if phone number is assigned
             if (agent.assignedPhoneNumberId) {
               try {
@@ -195,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         console.log("Agent created without voice configuration, skipping Bolna sync");
       }
-      
+
       res.json(agent);
     } catch (error) {
       console.error("Error creating AI agent:", error);
@@ -215,13 +217,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // Validate using strict update schema that rejects organizationId
       const updateData: UpdateAiAgentInput = updateAiAgentSchema.parse(req.body);
-      
+
       // Get existing agent to check for Bolna integration
       const existingAgent = await storage.getAIAgent(req.params.id, user.organizationId);
       if (!existingAgent) {
         return res.status(404).json({ message: "AI agent not found" });
       }
-      
+
       // Sync updates to Bolna if agent has Bolna integration
       if (existingAgent.bolnaAgentId) {
         try {
@@ -232,18 +234,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Continue with local update even if Bolna sync fails
         }
       }
-      
+
       // Pass only validated tenant-safe data to storage (organizationId cannot be in updateData)
       const agent = await storage.updateAIAgent(req.params.id, user.organizationId, updateData);
       if (!agent) {
         return res.status(404).json({ message: "AI agent not found" });
       }
-      
+
       // Emit real-time update
       if ((app as any).emitAgentUpdate) {
         (app as any).emitAgentUpdate(user.organizationId, agent);
       }
-      
+
       res.json(agent);
     } catch (error) {
       console.error("Error updating AI agent:", error);
@@ -261,13 +263,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Get agent to check for Bolna integration before deleting
       const agent = await storage.getAIAgent(req.params.id, user.organizationId);
       if (!agent) {
         return res.status(404).json({ message: "AI agent not found" });
       }
-      
+
       // Delete from Bolna if integrated
       if (agent.bolnaAgentId) {
         try {
@@ -277,17 +279,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Continue with local deletion even if Bolna deletion fails
         }
       }
-      
+
       const deleted = await storage.deleteAIAgent(req.params.id, user.organizationId);
       if (!deleted) {
         return res.status(404).json({ message: "AI agent not found" });
       }
-      
+
       // Emit real-time update
       if ((app as any).emitAgentDeleted) {
         (app as any).emitAgentDeleted(user.organizationId, req.params.id);
       }
-      
+
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting AI agent:", error);
@@ -303,12 +305,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const agent = await storage.getAIAgent(req.params.id, user.organizationId);
       if (!agent) {
         return res.status(404).json({ message: "AI agent not found" });
       }
-      
+
       console.log(`Syncing agent ${agent.id} with Bolna...`);
       console.log(`Agent data:`, JSON.stringify({
         name: agent.name,
@@ -319,22 +321,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         provider: agent.provider,
         language: agent.language,
       }, null, 2));
-      
+
       // Validate required fields
       if (!agent.voiceId) {
-        return res.status(400).json({ 
-          message: "Voice ID is required", 
+        return res.status(400).json({
+          message: "Voice ID is required",
           error: "Please select a voice for the agent before syncing with Bolna."
         });
       }
-      
+
       if (!agent.voiceProvider || agent.voiceProvider === 'all') {
-        return res.status(400).json({ 
-          message: "Voice provider is required", 
+        return res.status(400).json({
+          message: "Voice provider is required",
           error: "Please select a specific voice provider (ElevenLabs, Polly, etc.) before syncing."
         });
       }
-      
+
       // If already has Bolna integration, update it
       // If not, create new Bolna agent
       try {
@@ -346,40 +348,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const exotelDomain = process.env.EXOTEL_DOMAIN || 'api.exotel.com';
           const exotelPhoneNumber = process.env.EXOTEL_PHONE_NUMBER;
           const exotelAppId = process.env.EXOTEL_OUTBOUND_APP_ID;
-          
+
           if (exotelSid && exotelApiKey && exotelApiSecret && exotelPhoneNumber && exotelAppId) {
             console.log('[Bolna] Configuring Exotel provider with phone number:', exotelPhoneNumber);
             console.log('[Bolna] IMPORTANT: Make sure', exotelPhoneNumber, 'is registered in Bolna dashboard at https://app.bolna.dev');
-            
+
             // Configure all Exotel credentials including phone number and app ID
             try {
               await bolnaClient.configureProvider('EXOTEL_SID', exotelSid);
             } catch (e: any) {
               if (!e.message?.includes('Secret already exists')) throw e;
             }
-            
+
             try {
               await bolnaClient.configureProvider('EXOTEL_API_KEY', exotelApiKey);
             } catch (e: any) {
               if (!e.message?.includes('Secret already exists')) throw e;
             }
-            
+
             try {
               await bolnaClient.configureProvider('EXOTEL_API_SECRET', exotelApiSecret);
             } catch (e: any) {
               if (!e.message?.includes('Secret already exists')) throw e;
             }
-            
+
             try {
               await bolnaClient.configureProvider('EXOTEL_DOMAIN', exotelDomain);
             } catch (e: any) {
               if (!e.message?.includes('Secret already exists')) throw e;
             }
-            
+
             // Configure phone number and app ID (these should be updated on each sync)
             await bolnaClient.configureProvider('EXOTEL_PHONE_NUMBER', exotelPhoneNumber);
             await bolnaClient.configureProvider('EXOTEL_OUTBOUND_APP_ID', exotelAppId);
-            
+
             console.log('[Bolna] Exotel provider configured successfully with phone:', exotelPhoneNumber, 'and app ID:', exotelAppId);
           } else {
             console.warn('[Bolna] Missing Exotel configuration. Required: SID, API_KEY, API_SECRET, PHONE_NUMBER, APP_ID');
@@ -411,7 +413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             bolnaAgentId: bolnaAgent.agent_id,
             bolnaConfig: bolnaAgent as any,
           });
-          
+
           // Auto-setup inbound call if phone number is assigned
           if (agent.assignedPhoneNumberId) {
             try {
@@ -428,25 +430,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         }
-        
+
         const updatedAgent = await storage.getAIAgent(req.params.id, user.organizationId);
-        
+
         // Emit real-time update
         if ((app as any).emitAgentUpdate && updatedAgent) {
           (app as any).emitAgentUpdate(user.organizationId, updatedAgent);
         }
-        
+
         res.json(updatedAgent);
       } catch (bolnaError: any) {
         console.error("Bolna sync error:", bolnaError);
-        return res.status(500).json({ 
-          message: "Failed to sync with Bolna", 
+        return res.status(500).json({
+          message: "Failed to sync with Bolna",
           error: bolnaError.message || String(bolnaError)
         });
       }
     } catch (error: any) {
       console.error("Error syncing AI agent:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to sync AI agent",
         error: error.message || String(error)
       });
@@ -577,7 +579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             initialStatus = 'ringing';
           }
         }
-        
+
         await storage.updateCall(call.id, user.organizationId, {
           exotelCallSid: exotelCall.Call.Sid,
           status: initialStatus,
@@ -593,7 +595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if ((app as any).emitCallCreated && latestCall) {
         (app as any).emitCallCreated(user.organizationId, latestCall);
       }
-      
+
       // Emit metrics update for dashboard
       if ((app as any).emitMetricsUpdate) {
         const metrics = await storage.getDashboardMetrics(user.organizationId);
@@ -681,7 +683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           try {
             const existingNumber = existingMap.get(configNum.phoneNumber);
-            
+
             if (!existingNumber) {
               console.log('[Phone Sync] Creating new number:', configNum.phoneNumber);
               const created = await storage.createPhoneNumber(phoneData);
@@ -700,7 +702,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Also fetch phone numbers from Exotel API if available
       try {
         const exotelNumbers = await exotelClient.getPhoneNumbers();
-        
+
         for (const exotelNumber of exotelNumbers) {
           const phoneData: InsertPhoneNumber = {
             organizationId: user.organizationId,
@@ -717,7 +719,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           try {
             const existingNumber = existingMap.get(exotelNumber.PhoneNumber);
-            
+
             if (!existingNumber) {
               const created = await storage.createPhoneNumber(phoneData);
               syncedNumbers.push(created);
@@ -746,11 +748,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Log ALL incoming webhooks with full payload
       console.log('\n🔔 [Bolna Webhook] Received at:', new Date().toISOString());
       console.log('📦 [Bolna Webhook] Full payload:', JSON.stringify(req.body, null, 2));
-      
+
       // Bolna webhook payload structure - captures ALL real-time data
-      const { 
-        id: bolnaCallId, 
-        conversation_duration, 
+      const {
+        id: bolnaCallId,
+        conversation_duration,
         total_cost,
         transcript,
         recording_url,
@@ -766,13 +768,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Bolna Webhook] conversation_duration raw: ${conversation_duration}, type: ${typeof conversation_duration}, converted: ${callDuration}`);
 
       let call;
-      
+
       // Method 1: Try to find call using context_details (most reliable)
       if (context_details?.recipient_data?.callId && context_details?.recipient_data?.organizationId) {
         console.log(`[Bolna Webhook] Trying context_details: callId=${context_details.recipient_data.callId}, org=${context_details.recipient_data.organizationId}`);
         call = await storage.getCall(context_details.recipient_data.callId, context_details.recipient_data.organizationId);
       }
-      
+
       // Method 2: Try to find call by Bolna call ID
       if (!call && bolnaCallId) {
         console.log(`[Bolna Webhook] Trying Bolna ID: ${bolnaCallId}`);
@@ -792,30 +794,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Determine status based on Bolna's status field or conversation_duration
       let normalizedStatus = call.status;
       let isVoicemail = false;
-      
+
       if (bolnaStatus) {
         const statusLower = bolnaStatus.toLowerCase().replace(/[_\s-]/g, ''); // normalize separators
-        
+
         // Map Bolna status to our internal status
         if (statusLower === 'ringing' || statusLower === 'calling') {
           normalizedStatus = 'ringing';
-        } 
-        else if (statusLower === 'connected' || statusLower === 'answered' || 
-                 statusLower === 'inprogress' || statusLower === 'ongoing' ||
-                 statusLower === 'active' || statusLower === 'live') {
+        }
+        else if (statusLower === 'connected' || statusLower === 'answered' ||
+          statusLower === 'inprogress' || statusLower === 'ongoing' ||
+          statusLower === 'active' || statusLower === 'live') {
           normalizedStatus = 'in_progress';
-        } 
-        else if (statusLower === 'calldisconnected' || statusLower === 'disconnected' || 
-                 statusLower === 'ended' || statusLower === 'completed' ||
-                 statusLower === 'hangup') {
+        }
+        else if (statusLower === 'calldisconnected' || statusLower === 'disconnected' ||
+          statusLower === 'ended' || statusLower === 'completed' ||
+          statusLower === 'hangup') {
           normalizedStatus = 'completed';
-        } 
-        else if (statusLower === 'failed' || statusLower === 'noanswer' || 
-                 statusLower === 'notconnected' || statusLower === 'busy' ||
-                 statusLower === 'declined' || statusLower === 'unreachable' ||
-                 statusLower === 'error' || statusLower === 'timeout') {
+        }
+        else if (statusLower === 'failed' || statusLower === 'noanswer' ||
+          statusLower === 'notconnected' || statusLower === 'busy' ||
+          statusLower === 'declined' || statusLower === 'unreachable' ||
+          statusLower === 'error' || statusLower === 'timeout') {
           normalizedStatus = 'failed';
-        } 
+        }
         else if (statusLower === 'voicemail' || statusLower === 'vm') {
           // Treat voicemail as completed (call went through to voicemail)
           normalizedStatus = 'completed';
@@ -827,10 +829,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         else if (statusLower === 'initiated' || statusLower === 'queued') {
           normalizedStatus = 'initiated';
         }
-        
+
         console.log(`[Bolna Webhook] Status mapped: ${bolnaStatus} -> ${normalizedStatus}${isVoicemail ? ' (voicemail)' : ''}`);
       }
-      
+
       // If we have conversation_duration > 0, the call is completed
       if (callDuration && callDuration > 0) {
         normalizedStatus = 'completed';
@@ -872,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updates.bolnaCostPerMinute = Number(total_cost);
         console.log(`[Bolna Webhook] 💰 Cost data received: $${total_cost}`);
       }
-      
+
       // Log what data was received for debugging
       console.log(`[Bolna Webhook] 📊 Data received:`);
       console.log(`   - Status: ${bolnaStatus} -> ${normalizedStatus}`);
@@ -880,7 +882,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`   - Transcription: ${transcript ? 'YES (' + transcript.length + ' chars)' : 'NO'}`);
       console.log(`   - Recording URL: ${updates.recordingUrl ? 'YES' : 'NO'}`);
       console.log(`   - Cost: ${total_cost !== undefined ? '$' + total_cost : 'not provided'}`);
-      
+
       // Store additional metadata if provided
       if (call_details || metadata || isVoicemail) {
         updates.metadata = {
@@ -894,11 +896,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Bolna Webhook] Updating call with:`, JSON.stringify(updates, null, 2));
 
       const updatedCall = await storage.updateCall(call.id, call.organizationId, updates);
-      
+
       console.log(`[Bolna Webhook] ✅ Call updated successfully`);
       console.log(`[Bolna Webhook] Checking emitters - emitCallUpdate:`, typeof (app as any).emitCallUpdate);
       console.log(`[Bolna Webhook] Checking emitters - emitMetricsUpdate:`, typeof (app as any).emitMetricsUpdate);
-      
+
       // Emit real-time updates
       if ((app as any).emitCallUpdate && updatedCall) {
         console.log(`[Bolna Webhook] 🚀 Emitting call:updated to org:${call.organizationId}`);
@@ -906,7 +908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         console.warn('[Bolna Webhook] ⚠️ emitCallUpdate not available or call not updated');
       }
-      
+
       // Emit metrics update for dashboard
       if ((app as any).emitMetricsUpdate) {
         console.log(`[Bolna Webhook] 📊 Fetching and emitting metrics update`);
@@ -918,13 +920,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // AI-based lead status update after call completion
       if ((normalizedStatus === 'completed' || normalizedStatus === 'failed') && call.leadId) {
         console.log(`[Bolna Webhook] 🤖 Updating lead ${call.leadId} based on call outcome`);
-        
+
         try {
           const lead = await storage.getLead(call.leadId, call.organizationId);
           if (lead) {
             let newLeadStatus = lead.status;
             let aiSummary = lead.aiSummary || '';
-            
+
             // Analyze call outcome
             if (normalizedStatus === 'completed' && transcript && transcript.length > 100) {
               // Use AI to analyze the transcript and determine lead status
@@ -944,7 +946,7 @@ Respond with ONLY one of these words: qualified, converted, lost, or contacted`;
                 // Call OpenAI for analysis
                 const statusAnalysis = await generateAISummary(analysisPrompt);
                 const analyzedStatus = statusAnalysis.toLowerCase().trim();
-                
+
                 if (['qualified', 'converted', 'lost', 'contacted'].includes(analyzedStatus)) {
                   newLeadStatus = analyzedStatus;
                 }
@@ -953,10 +955,10 @@ Respond with ONLY one of these words: qualified, converted, lost, or contacted`;
                 const summaryPrompt = `Summarize this sales call in 2-3 sentences. Focus on: customer's interest level, key discussion points, and next steps.
 
 Transcript: ${transcript.substring(0, 2000)}`;
-                
+
                 const conversationSummary = await generateAISummary(summaryPrompt);
                 aiSummary = conversationSummary;
-                
+
                 console.log(`[Bolna Webhook] AI analyzed lead status: ${lead.status} -> ${newLeadStatus}`);
               } catch (aiError) {
                 console.error(`[Bolna Webhook] AI analysis failed:`, (aiError as Error).message);
@@ -990,7 +992,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
             leadUpdates.notes = (lead.notes || '') + `\n[Call ${new Date().toISOString()}]: ${normalizedStatus}${callDuration ? ` (${callDuration}s)` : ''}`;
 
             await storage.updateLead(call.leadId, call.organizationId, leadUpdates);
-            
+
             console.log(`[Bolna Webhook] ✅ Lead ${call.leadId} updated: status=${newLeadStatus}`);
 
             // Emit lead update
@@ -1090,7 +1092,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
       if ((app as any).emitCallUpdate && updatedCall) {
         (app as any).emitCallUpdate(call.organizationId, updatedCall);
       }
-      
+
       // Emit metrics update for dashboard
       if ((app as any).emitMetricsUpdate) {
         const metrics = await storage.getDashboardMetrics(call.organizationId);
@@ -1113,13 +1115,13 @@ Transcript: ${transcript.substring(0, 2000)}`;
         return res.status(404).json({ message: "User not found" });
       }
       const calls = await storage.getCalls(user.organizationId);
-      
+
       // Validate response: ensure all calls belong to user's organization (defensive)
       const validCalls = calls.filter(call => call.organizationId === user.organizationId);
       if (validCalls.length !== calls.length) {
         console.error("WARNING: Storage returned cross-tenant calls data");
       }
-      
+
       res.json(validCalls);
     } catch (error) {
       console.error("Error fetching calls:", error);
@@ -1138,13 +1140,13 @@ Transcript: ${transcript.substring(0, 2000)}`;
       if (!call) {
         return res.status(404).json({ message: "Call not found" });
       }
-      
+
       // Validate response: ensure call belongs to user's organization (defensive)
       if (call.organizationId !== user.organizationId) {
         console.error("WARNING: Storage returned cross-tenant call data");
         return res.status(404).json({ message: "Call not found" });
       }
-      
+
       res.json(call);
     } catch (error) {
       console.error("Error fetching call:", error);
@@ -1164,7 +1166,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
       if (!call) {
         return res.status(404).json({ message: "Call not found" });
       }
-      
+
       // Get details from Bolna if we have a bolnaCallId
       if (call.bolnaCallId) {
         const bolnaDetails = await bolnaClient.getCallDetails(call.bolnaCallId);
@@ -1250,14 +1252,14 @@ Transcript: ${transcript.substring(0, 2000)}`;
     try {
       const provider = req.query.provider as string | undefined;
       let voices = await bolnaClient.getAvailableVoices();
-      
+
       // Filter by provider if specified (and not "all")
       if (provider && provider !== 'all') {
-        voices = voices.filter(voice => 
+        voices = voices.filter(voice =>
           voice.provider?.toLowerCase() === provider.toLowerCase()
         );
       }
-      
+
       res.json(voices);
     } catch (error) {
       console.error("Error fetching Bolna voices:", error);
@@ -1359,16 +1361,16 @@ Transcript: ${transcript.substring(0, 2000)}`;
           originalFileName: req.file.originalname,
           originalMimeType: req.file.mimetype,
         }
-      });
+      } as any);
 
       // Update agent with knowledge base ID
       if (agentId && bolnaKB.rag_id) {
-        const agent = await storage.getAiAgent(agentId, user.organizationId);
+        const agent = await storage.getAIAgent(agentId, user.organizationId);
         if (agent) {
           const existingKBIds = agent.knowledgeBaseIds || [];
-          const updatedKBIds = [...new Set([...existingKBIds, bolnaKB.rag_id])];
-          
-          await storage.updateAiAgent(agentId, user.organizationId, {
+          const updatedKBIds = Array.from(new Set([...existingKBIds, bolnaKB.rag_id]));
+
+          await storage.updateAIAgent(agentId, user.organizationId, {
             knowledgeBaseIds: updatedKBIds,
           });
 
@@ -1384,9 +1386,9 @@ Transcript: ${transcript.substring(0, 2000)}`;
       });
     } catch (error) {
       console.error("Error uploading knowledge base to Bolna:", error);
-      res.status(500).json({ 
-        message: "Failed to upload knowledge base", 
-        error: (error as Error).message 
+      res.status(500).json({
+        message: "Failed to upload knowledge base",
+        error: (error as Error).message
       });
     }
   });
@@ -1443,7 +1445,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
               uploadedAt: new Date().toISOString(),
               fileName: file.originalname,
               fileSize: file.size,
-            }
+            } as any
           });
 
           results.push({
@@ -1462,13 +1464,13 @@ Transcript: ${transcript.substring(0, 2000)}`;
 
       // Update agent with all knowledge base IDs
       if (agentId && results.length > 0) {
-        const agent = await storage.getAiAgent(agentId, user.organizationId);
+        const agent = await storage.getAIAgent(agentId, user.organizationId);
         if (agent) {
           const newKBIds = results.map(r => r.bolnaRagId);
           const existingKBIds = agent.knowledgeBaseIds || [];
-          const updatedKBIds = [...new Set([...existingKBIds, ...newKBIds])];
-          
-          await storage.updateAiAgent(agentId, user.organizationId, {
+          const updatedKBIds = Array.from(new Set([...existingKBIds, ...newKBIds]));
+
+          await storage.updateAIAgent(agentId, user.organizationId, {
             knowledgeBaseIds: updatedKBIds,
           });
         }
@@ -1482,9 +1484,9 @@ Transcript: ${transcript.substring(0, 2000)}`;
       });
     } catch (error) {
       console.error("Error bulk uploading knowledge bases:", error);
-      res.status(500).json({ 
-        message: "Failed to bulk upload knowledge bases", 
-        error: (error as Error).message 
+      res.status(500).json({
+        message: "Failed to bulk upload knowledge bases",
+        error: (error as Error).message
       });
     }
   });
@@ -1596,7 +1598,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
       const kbs = await storage.getKnowledgeBaseByAgent(agentId, user.organizationId);
 
       if (kbs.length === 0) {
-        return res.json({ 
+        return res.json({
           message: "No knowledge bases found for this agent",
           synced: [],
           failed: [],
@@ -1621,7 +1623,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
 
         try {
           // Verify the knowledge base exists in Bolna
-          let bolnaRagId = kb.externalId;
+          let bolnaRagId = kb.bolnaKbId;
           if (!bolnaRagId) {
             // If no external ID, try to get from metadata
             const metadata = kb.metadata || {};
@@ -1656,7 +1658,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
       // Update agent's knowledge base IDs in Bolna
       const syncedRagIds = synced.map(s => s.bolnaRagId);
       if (syncedRagIds.length > 0) {
-        await storage.updateAiAgent(agentId, user.organizationId, {
+        await storage.updateAIAgent(agentId, user.organizationId, {
           knowledgeBaseIds: syncedRagIds,
         });
       }
@@ -1670,9 +1672,9 @@ Transcript: ${transcript.substring(0, 2000)}`;
       });
     } catch (error) {
       console.error("Error syncing knowledge bases to Bolna:", error);
-      res.status(500).json({ 
-        message: "Failed to sync knowledge bases", 
-        error: (error as Error).message 
+      res.status(500).json({
+        message: "Failed to sync knowledge bases",
+        error: (error as Error).message
       });
     }
   });
@@ -1706,8 +1708,8 @@ Transcript: ${transcript.substring(0, 2000)}`;
 
       // Validate file is PDF only
       if (req.file.mimetype !== 'application/pdf') {
-        return res.status(400).json({ 
-          message: "Bolna only accepts PDF files. Please upload a PDF document." 
+        return res.status(400).json({
+          message: "Bolna only accepts PDF files. Please upload a PDF document."
         });
       }
 
@@ -1936,13 +1938,13 @@ Transcript: ${transcript.substring(0, 2000)}`;
         return res.status(404).json({ message: "User not found" });
       }
       const knowledge = await storage.getKnowledgeBase(user.organizationId);
-      
+
       // Defensive validation
       const validKnowledge = knowledge.filter(k => k.organizationId === user.organizationId);
       if (validKnowledge.length !== knowledge.length) {
         console.error("WARNING: Storage returned cross-tenant knowledge base data");
       }
-      
+
       res.json(validKnowledge);
     } catch (error) {
       console.error("Error fetching knowledge base:", error);
@@ -1961,13 +1963,13 @@ Transcript: ${transcript.substring(0, 2000)}`;
       if (!item) {
         return res.status(404).json({ message: "Knowledge base item not found" });
       }
-      
+
       // Defensive validation
       if (item.organizationId !== user.organizationId) {
         console.error("WARNING: Storage returned cross-tenant knowledge base item");
         return res.status(404).json({ message: "Knowledge base item not found" });
       }
-      
+
       res.json(item);
     } catch (error) {
       console.error("Error fetching knowledge base item:", error);
@@ -1982,23 +1984,23 @@ Transcript: ${transcript.substring(0, 2000)}`;
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Validate using strict schema that rejects organizationId
       const clientData: CreateKnowledgeBaseInput = createKnowledgeBaseSchema.parse(req.body);
-      
+
       // Server-side: inject organizationId from authenticated user
       const knowledgeData: InsertKnowledgeBase = {
         ...clientData,
         organizationId: user.organizationId,
       };
-      
+
       let item: any;
-      
+
       // If content is provided and contentType is text/markdown/json, upload to Bolna
       if (knowledgeData.content && ['text', 'markdown', 'json'].includes(knowledgeData.contentType || 'text')) {
         try {
           console.log(`[KB Create] Uploading text-based KB to Bolna: ${knowledgeData.title}`);
-          
+
           // Create a text document from the knowledge base content
           const textContent = `
 ${knowledgeData.title || 'Knowledge Base Document'}
@@ -2013,24 +2015,25 @@ ${knowledgeData.content}
 
 ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
 `;
-          
+
           // Convert text to PDF buffer
+          // @ts-ignore
           const PDFDocument = (await import('pdfkit')).default;
           const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
             const doc = new PDFDocument();
             const chunks: Buffer[] = [];
-            
+
             doc.on('data', (chunk: Buffer) => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
             doc.on('error', reject);
-            
+
             // Add content to PDF
             doc.fontSize(16).text(knowledgeData.title || 'Knowledge Base Document', { underline: true });
             doc.moveDown();
             doc.fontSize(12).text(textContent);
             doc.end();
           });
-          
+
           // Upload to Bolna
           const bolnaKB = await bolnaClient.createKnowledgeBase(pdfBuffer, {
             fileName: `${(knowledgeData.title || 'kb').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
@@ -2038,36 +2041,36 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
             similarity_top_k: 5,
             overlapping: 20,
           });
-          
+
           console.log(`[KB Create] ✅ Bolna KB created with RAG ID: ${bolnaKB.rag_id}`);
-          
+
           // Store with Bolna reference
-          knowledgeData.externalId = bolnaKB.rag_id;
-          knowledgeData.metadata = {
+          knowledgeData.bolnaKbId = bolnaKB.rag_id;
+          (knowledgeData as any).metadata = {
             ...knowledgeData.metadata,
             bolnaRagId: bolnaKB.rag_id,
             uploadedToBolna: true,
             uploadedAt: new Date().toISOString(),
           };
-          
+
           // Update agent if specified
           if (knowledgeData.agentId && bolnaKB.rag_id) {
-            const agent = await storage.getAiAgent(knowledgeData.agentId, user.organizationId);
+            const agent = await storage.getAIAgent(knowledgeData.agentId, user.organizationId);
             if (agent) {
               const existingKBIds = agent.knowledgeBaseIds || [];
-              const updatedKBIds = [...new Set([...existingKBIds, bolnaKB.rag_id])];
-              
-              await storage.updateAiAgent(knowledgeData.agentId, user.organizationId, {
+              const updatedKBIds = Array.from(new Set([...existingKBIds, bolnaKB.rag_id]));
+
+              await storage.updateAIAgent(knowledgeData.agentId, user.organizationId, {
                 knowledgeBaseIds: updatedKBIds,
               });
-              
+
               console.log(`[KB Create] ✅ Agent ${knowledgeData.agentId} updated with KB: ${bolnaKB.rag_id}`);
             }
           }
         } catch (bolnaError) {
           console.error('[KB Create] Failed to upload to Bolna:', bolnaError);
           // Continue creating KB in platform even if Bolna upload fails
-          knowledgeData.metadata = {
+          (knowledgeData as any).metadata = {
             ...knowledgeData.metadata,
             bolnaUploadError: (bolnaError as Error).message,
             bolnaUploadAttempted: true,
@@ -2075,8 +2078,8 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
           };
         }
       }
-      
-      item = await storage.createKnowledgeBase(knowledgeData);
+
+      item = await storage.createKnowledgeBase(knowledgeData as any);
       res.json(item);
     } catch (error) {
       console.error("Error creating knowledge base item:", error);
@@ -2094,10 +2097,10 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Validate using strict update schema that rejects organizationId
       const updateData: UpdateKnowledgeBaseInput = updateKnowledgeBaseSchema.parse(req.body);
-      
+
       const item = await storage.updateKnowledgeBase(req.params.id, user.organizationId, updateData);
       if (!item) {
         return res.status(404).json({ message: "Knowledge base item not found" });
@@ -2192,23 +2195,23 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
 
       // Update platform KB
       const updated = await storage.updateKnowledgeBase(req.params.id, user.organizationId, {
-        externalId: bolnaKB.rag_id,
+        bolnaKbId: bolnaKB.rag_id,
         metadata: {
           ...(kb.metadata as any || {}),
           bolnaRagId: bolnaKB.rag_id,
           syncedAt: new Date().toISOString(),
           lastSyncedAt: new Date().toISOString(),
         }
-      });
+      } as any);
 
       // Update agent if linked
       if (kb.agentId) {
-        const agent = await storage.getAiAgent(kb.agentId, user.organizationId);
+        const agent = await storage.getAIAgent(kb.agentId, user.organizationId);
         if (agent) {
           const existingKBIds = agent.knowledgeBaseIds || [];
           if (!existingKBIds.includes(bolnaKB.rag_id)) {
             const updatedKBIds = [...existingKBIds, bolnaKB.rag_id];
-            await storage.updateAiAgent(kb.agentId, user.organizationId, {
+            await storage.updateAIAgent(kb.agentId, user.organizationId, {
               knowledgeBaseIds: updatedKBIds,
             });
             console.log(`[KB Sync] ✅ Updated agent ${agent.name} with KB ID`);
@@ -2238,12 +2241,12 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       const deleted = await storage.deleteKnowledgeBase(req.params.id, user.organizationId);
       if (!deleted) {
         return res.status(404).json({ message: "Knowledge base item not found" });
       }
-      
+
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting knowledge base item:", error);
@@ -2298,12 +2301,12 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         createdBy: userId,
       };
       const campaign = await storage.createCampaign(campaignData);
-      
+
       // Emit real-time update
       if ((app as any).emitCampaignCreated) {
         (app as any).emitCampaignCreated(user.organizationId, campaign);
       }
-      
+
       res.json(campaign);
     } catch (error) {
       console.error("Error creating campaign:", error);
@@ -2408,12 +2411,12 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         organizationId: user.organizationId,
       };
       const lead = await storage.createLead(leadData);
-      
+
       // Emit real-time update
       if ((app as any).emitLeadCreated) {
         (app as any).emitLeadCreated(user.organizationId, lead);
       }
-      
+
       // Generate AI summary if notes exist
       if (lead.notes) {
         const aiSummary = await analyzeLeadQualification({
@@ -2423,7 +2426,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         });
         await storage.updateLead(lead.id, user.organizationId, { aiSummary });
       }
-      
+
       res.json(lead);
     } catch (error) {
       console.error("Error creating lead:", error);
@@ -2462,7 +2465,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       })).filter(lead => lead.name); // Only include rows with names
 
       const leads = await storage.createLeadsBulk(leadsData, user.organizationId);
-      
+
       // Update campaign lead count
       const campaign = await storage.getCampaign(campaignId, user.organizationId);
       if (campaign) {
@@ -2471,7 +2474,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         });
       }
 
-      res.json({ 
+      res.json({
         message: "Leads uploaded successfully",
         count: leads.length,
         leads,
@@ -2538,17 +2541,17 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       // AI Assignment
       if (enableAIAssignment) {
         console.log(`[Bulk Lead Upload] Starting AI assignment for ${createdLeads.length} leads`);
-        
+
         // Get available agents
         const agents = await storage.getAIAgents(user.organizationId);
         const activeAgents = agents.filter(a => a.status === 'active' && a.bolnaAgentId);
-        
+
         if (activeAgents.length === 0) {
           console.warn(`[Bulk Lead Upload] No active agents with Bolna IDs found`);
         } else {
           // Use AI to match leads to agents
           const assignments = await matchLeadsToAgents(createdLeads, activeAgents);
-          
+
           for (const lead of createdLeads) {
             const assignedAgentId = assignments[lead.id];
             if (assignedAgentId) {
@@ -2572,7 +2575,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
                 if (enableAutoCalling && agent.bolnaAgentId && lead.phone && fromPhoneNumber) {
                   try {
                     console.log(`[Bulk Lead Upload] Initiating call for lead ${lead.name} (${lead.phone}) via agent ${agent.name}`);
-                    
+
                     // Initiate call via Bolna
                     const callResponse = await bolnaClient.initiateCallV2({
                       agent_id: agent.bolnaAgentId,
@@ -2624,13 +2627,13 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
                     }
 
                     callsInitiated++;
-                    
+
                     // Update lead status
                     await storage.updateLead(lead.id, user.organizationId, {
                       status: 'contacted',
                       lastContactedAt: new Date(),
                       totalCalls: (lead.totalCalls || 0) + 1,
-                    });
+                    } as any);
                   } catch (callError) {
                     console.error(`[Bulk Lead Upload] Failed to initiate call for ${lead.name}:`, (callError as Error).message);
                   }
@@ -2641,7 +2644,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         }
       }
 
-      const message = enableAutoCalling 
+      const message = enableAutoCalling
         ? `Uploaded ${createdLeads.length} leads, assigned ${assignedCount} to agents, initiated ${callsInitiated} calls`
         : enableAIAssignment
           ? `Uploaded ${createdLeads.length} leads, assigned ${assignedCount} to agents`
@@ -2830,13 +2833,13 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         organizationId: user.organizationId,
       };
       const call = await storage.createCall(callData);
-      
+
       // Generate AI summary if transcription exists
       if (call.transcription) {
         const aiSummary = await generateAISummary(call.transcription);
         await storage.updateCall(call.id, user.organizationId, { aiSummary });
       }
-      
+
       res.json(call);
     } catch (error) {
       console.error("Error creating call:", error);
@@ -2920,13 +2923,13 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         return res.status(404).json({ message: "User not found" });
       }
       const visit = await storage.updateVisit(req.params.id, user.organizationId, req.body);
-      
+
       // Generate summary if transcription exists
       if (visit && req.body.transcription && !visit.summary) {
         const summary = await generateMeetingSummary(req.body.transcription);
         await storage.updateVisit(req.params.id, user.organizationId, { summary });
       }
-      
+
       if (!visit) {
         return res.status(404).json({ message: "Visit not found" });
       }
@@ -3047,12 +3050,12 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         user.organizationId,
         { companyName, logoUrl, primaryColor }
       );
-      
+
       // Emit real-time update
       if ((app as any).emitOrganizationUpdate && organization) {
         (app as any).emitOrganizationUpdate(user.organizationId, organization);
       }
-      
+
       res.json(organization);
     } catch (error) {
       console.error("Error updating organization whitelabel:", error);
@@ -3061,30 +3064,49 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
   });
 
   const httpServer = createServer(app);
-  
+
   // WebSocket setup for real-time updates
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: "*",
-      methods: ["GET", "POST"]
+      methods: ["GET", "POST"],
+      credentials: true
     }
   });
 
+  // Use session middleware
+  io.engine.use(sessionMiddleware());
+
   // WebSocket connection handler
-  io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
-    
+  io.on('connection', async (socket) => {
+    // console.log('Client connected:', socket.id);
+    const session = (socket.request as any).session;
+
     // Join organization-specific room for multi-tenant isolation
-    socket.on('join:organization', (organizationId: string) => {
-      socket.join(`org:${organizationId}`);
-      console.log(`Client ${socket.id} joined organization room: org:${organizationId}`);
+    socket.on('join:organization', async (organizationId: string) => {
+      // Security Check: Verify user belongs to this organization
+      if (session?.user?.claims?.sub) {
+        try {
+          const user = await storage.getUser(session.user.claims.sub);
+          if (user && user.organizationId === organizationId) {
+            socket.join(`org:${organizationId}`);
+            console.log(`Client ${socket.id} (User: ${user.email}) joined organization room: org:${organizationId}`);
+          } else {
+            console.warn(`Unauthorized join attempt: User ${session.user.claims.sub} tried to join org ${organizationId}`);
+          }
+        } catch (err) {
+          console.error("Error verifying socket user:", err);
+        }
+      } else {
+        console.warn(`Unauthenticated client ${socket.id} tried to join org ${organizationId}`);
+      }
     });
 
     socket.on('leave:organization', (organizationId: string) => {
       socket.leave(`org:${organizationId}`);
       console.log(`Client ${socket.id} left organization room: org:${organizationId}`);
     });
-    
+
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id);
     });
@@ -3264,9 +3286,9 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         }
       }
 
-      res.json({ 
-        message: `Successfully auto-assigned ${assignedCount} leads using AI matching`, 
-        count: assignedCount 
+      res.json({
+        message: `Successfully auto-assigned ${assignedCount} leads using AI matching`,
+        count: assignedCount
       });
     } catch (error) {
       console.error("Error auto-assigning leads:", error);
@@ -3293,7 +3315,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       // Optionally sync with Bolna to get latest status
       try {
         const bolnaBatches = await bolnaClient.listBatches();
-        
+
         // Update local records with latest Bolna data
         for (const bolnaBatch of bolnaBatches) {
           const localBatch = localBatches.find(b => b.batchId === bolnaBatch.batch_id);
@@ -3362,8 +3384,8 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       // Use predefined webhook URL from environment
       let webhookUrl: string | undefined = undefined;
       if (process.env.PUBLIC_WEBHOOK_URL) {
-        const baseUrl = process.env.PUBLIC_WEBHOOK_URL.startsWith('http') 
-          ? process.env.PUBLIC_WEBHOOK_URL 
+        const baseUrl = process.env.PUBLIC_WEBHOOK_URL.startsWith('http')
+          ? process.env.PUBLIC_WEBHOOK_URL
           : `https://${process.env.PUBLIC_WEBHOOK_URL}`;
         webhookUrl = `${baseUrl}/api/webhooks/bolna/call-status`;
       }
@@ -3445,7 +3467,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       // Get latest status from Bolna
       try {
         const bolnaBatch = await bolnaClient.getBatch(batch_id);
-        
+
         // Update local record
         await db.update(batches)
           .set({

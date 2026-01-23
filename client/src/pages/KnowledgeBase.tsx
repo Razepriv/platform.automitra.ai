@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,6 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, FileText, Trash2, Edit, BookOpen, X, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
 import type { KnowledgeBase as KnowledgeBaseType, AiAgent } from "@shared/schema";
 import { createKnowledgeBaseSchema, updateKnowledgeBaseSchema } from "@shared/schema";
 
@@ -63,7 +64,7 @@ export default function KnowledgeBase() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState<'create'|'edit'>('create');
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<KnowledgeBaseType | null>(null);
   const [itemToDelete, setItemToDelete] = useState<KnowledgeBaseType | null>(null);
@@ -78,8 +79,8 @@ export default function KnowledgeBase() {
       setDialogMode('create');
       setIsDialogOpen(true);
       params.delete('action');
-      const newUrl = params.toString() ? 
-        `${window.location.pathname}?${params.toString()}` : 
+      const newUrl = params.toString() ?
+        `${window.location.pathname}?${params.toString()}` :
         window.location.pathname;
       window.history.replaceState(null, '', newUrl);
     }
@@ -114,6 +115,19 @@ export default function KnowledgeBase() {
   const { data: knowledgeBase = [], isLoading } = useQuery<KnowledgeBaseType[]>({
     queryKey: ["/api/knowledge-base"],
   });
+
+  // Real-time updates via WebSocket
+  useWebSocketEvent('knowledge_base:created', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
+  }, []));
+
+  useWebSocketEvent('knowledge_base:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
+  }, []));
+
+  useWebSocketEvent('knowledge_base:deleted', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
+  }, []));
 
   const { data: agents = [] } = useQuery<AiAgent[]>({
     queryKey: ["/api/ai-agents"],
@@ -366,7 +380,7 @@ export default function KnowledgeBase() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-lg" data-testid={`text-title-${item.id}`}>{item.title}</CardTitle>
-                      {item.externalId && (
+                      {item.bolnaKbId && (
                         <Badge variant="secondary" className="text-xs">
                           Synced
                         </Badge>
@@ -407,10 +421,10 @@ export default function KnowledgeBase() {
                       onClick={() => handleSyncToBolna(item.id)}
                       disabled={syncToBolnaMutation.isPending}
                       data-testid={`button-sync-${item.id}`}
-                      title={item.externalId ? "Resync to Bolna" : "Sync to Bolna"}
+                      title={item.bolnaKbId ? "Resync to Bolna" : "Sync to Bolna"}
                     >
                       <RefreshCw className={`w-3 h-3 mr-1 ${syncToBolnaMutation.isPending ? 'animate-spin' : ''}`} />
-                      {item.externalId ? "Resync" : "Sync"}
+                      {item.bolnaKbId ? "Resync" : "Sync"}
                     </Button>
                     <Button
                       variant="outline"
@@ -493,7 +507,7 @@ export default function KnowledgeBase() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Content Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                      <Select onValueChange={field.onChange} value={field.value ?? undefined}>
                         <FormControl>
                           <SelectTrigger data-testid="select-content-type">
                             <SelectValue />
@@ -520,8 +534,8 @@ export default function KnowledgeBase() {
                       <FormControl>
                         <Input
                           placeholder="e.g., Sales, Support"
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
                           data-testid="input-category"
                         />
                       </FormControl>
@@ -675,7 +689,7 @@ export default function KnowledgeBase() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Content Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                      <Select onValueChange={field.onChange} value={field.value ?? undefined}>
                         <FormControl>
                           <SelectTrigger data-testid="select-edit-content-type">
                             <SelectValue />
@@ -700,11 +714,11 @@ export default function KnowledgeBase() {
                     <FormItem>
                       <FormLabel>Category</FormLabel>
                       <FormControl>
-                      <Input
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        data-testid="input-edit-category"
-                      />
+                        <Input
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          data-testid="input-edit-category"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import { format } from "date-fns";
 import { LeadDialog } from "@/components/LeadDialog";
 import type { Lead } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWebSocketEvent } from "@/lib/useWebSocket";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Contacts() {
@@ -37,6 +38,19 @@ export default function Contacts() {
   const { data: leads = [], isLoading } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
   });
+
+  // Real-time updates via WebSocket
+  useWebSocketEvent('lead:created', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
+  useWebSocketEvent('lead:updated', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
+
+  useWebSocketEvent('lead:deleted', useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+  }, []));
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -221,7 +235,7 @@ export default function Contacts() {
                             <DropdownMenuItem>Log Call</DropdownMenuItem>
                             <DropdownMenuItem>Send Email</DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => deleteMutation.mutate(contact.id)}
                             >
@@ -239,10 +253,10 @@ export default function Contacts() {
         </CardContent>
       </Card>
 
-      <LeadDialog 
-        open={isDialogOpen} 
-        onOpenChange={setIsDialogOpen} 
-        lead={selectedLead} 
+      <LeadDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        lead={selectedLead}
       />
     </div>
   );

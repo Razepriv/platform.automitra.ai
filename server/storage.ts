@@ -127,7 +127,7 @@ export interface IStorage {
   getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics>;
   getCallMetrics(organizationId: string, daysAgo: number): Promise<CallMetrics[]>;
   getAgentPerformance(organizationId: string, daysAgo: number): Promise<AgentPerformance[]>;
-  
+
   // Billing operations
   getBillingMetrics(organizationId: string): Promise<BillingMetrics>;
 }
@@ -198,11 +198,14 @@ export class DatabaseStorage implements IStorage {
   }
   // Call operations
   async getCalls(organizationId: string): Promise<Call[]> {
-    return await db.select().from(calls).where(eq(calls.organizationId, organizationId));
+    return await db.select().from(calls)
+      .where(eq(calls.organizationId, organizationId))
+      .orderBy(desc(calls.createdAt));
   }
   async getCallsByAgent(agentId: string, organizationId: string): Promise<Call[]> {
     return await db.select().from(calls)
-      .where(and(eq(calls.agentId, agentId), eq(calls.organizationId, organizationId)));
+      .where(and(eq(calls.agentId, agentId), eq(calls.organizationId, organizationId)))
+      .orderBy(desc(calls.createdAt));
   }
   async getCall(id: string, organizationId: string): Promise<Call | undefined> {
     const [call] = await db.select().from(calls)
@@ -230,21 +233,21 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated || undefined;
   }
-    // Contact operations
+  // Contact operations
 
-    // Phone Number operations
-    async getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]> {
-      return await db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, organizationId));
-    }
-    async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
-      const [contact] = await db.insert(contacts).values(contactData).returning();
-      return contact;
-    }
+  // Phone Number operations
+  async getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]> {
+    return await db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, organizationId));
+  }
+  async createContact(contactData: { organizationId: string, name: string, email?: string, phone?: string, company?: string }) {
+    const [contact] = await db.insert(contacts).values(contactData).returning();
+    return contact;
+  }
 
-    async getContacts(organizationId: string) {
-      // List all contacts for an organization
-      return await db.select().from(contacts).where(eq(contacts.organizationId, organizationId));
-    }
+  async getContacts(organizationId: string) {
+    // List all contacts for an organization
+    return await db.select().from(contacts).where(eq(contacts.organizationId, organizationId));
+  }
   // User operations
   async getUser(id: string, organizationId?: string): Promise<User | undefined> {
     if (organizationId) {
@@ -400,7 +403,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(knowledgeBase.organizationId, organizationId))
       .orderBy(desc(knowledgeBase.createdAt));
   }
-  
+
   async getKnowledgeBaseByAgent(agentId: string, organizationId: string): Promise<KnowledgeBase[]> {
     return await db.select().from(knowledgeBase)
       .where(and(
@@ -409,7 +412,7 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(desc(knowledgeBase.createdAt));
   }
-  
+
   async getKnowledgeBaseItem(id: string, organizationId: string): Promise<KnowledgeBase | undefined> {
     const [kb] = await db.select().from(knowledgeBase)
       .where(and(
@@ -418,7 +421,7 @@ export class DatabaseStorage implements IStorage {
       ));
     return kb;
   }
-  
+
   async createKnowledgeBase(knowledge: InsertKnowledgeBase): Promise<KnowledgeBase> {
     const [kb] = await db.insert(knowledgeBase)
       .values({
@@ -428,7 +431,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return kb;
   }
-  
+
   async updateKnowledgeBase(id: string, organizationId: string, knowledge: UpdateKnowledgeBaseInput): Promise<KnowledgeBase | undefined> {
     const [kb] = await db.update(knowledgeBase)
       .set({
@@ -442,7 +445,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return kb;
   }
-  
+
   async deleteKnowledgeBase(id: string, organizationId: string): Promise<boolean> {
     const result = await db.delete(knowledgeBase)
       .where(and(
@@ -454,7 +457,7 @@ export class DatabaseStorage implements IStorage {
   }
   async getUsageTracking(organizationId: string, daysAgo?: number): Promise<UsageTracking[]> { throw new Error('Not implemented'); }
   async createUsageTracking(usage: InsertUsageTracking): Promise<UsageTracking> { throw new Error('Not implemented'); }
-  
+
   async getAnalyticsMetrics(organizationId: string, daysAgo: number): Promise<AnalyticsMetrics> {
     const dateThreshold = new Date();
     dateThreshold.setDate(dateThreshold.getDate() - daysAgo);
@@ -503,15 +506,15 @@ export class DatabaseStorage implements IStorage {
 
     // Group by date
     const metricsByDate = new Map<string, { calls: number; duration: number; successful: number }>();
-    
+
     allCalls.forEach((call: any) => {
       const date = call.createdAt ? call.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
       const existing = metricsByDate.get(date) || { calls: 0, duration: 0, successful: 0 };
-      
+
       existing.calls++;
       existing.duration += call.duration || 0;
       if (call.status === 'completed') existing.successful++;
-      
+
       metricsByDate.set(date, existing);
     });
 
@@ -619,6 +622,7 @@ export class DatabaseStorage implements IStorage {
         totalMinutes: prevMetrics.totalMinutes,
         totalCost: prevMetrics.totalCost,
       },
+      costBreakdown: [],
     };
   }
 }

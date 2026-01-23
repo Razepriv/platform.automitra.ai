@@ -47,7 +47,7 @@ declare module "express-session" {
 
 declare global {
   namespace Express {
-    interface User extends AuthenticatedUser {}
+    interface User extends AuthenticatedUser { }
     interface Request {
       user?: AuthenticatedUser;
     }
@@ -59,17 +59,17 @@ function validateEmail(email: string): { valid: boolean; error?: string } {
   if (!email || typeof email !== 'string') {
     return { valid: false, error: 'Email is required' };
   }
-  
+
   const trimmedEmail = email.trim().toLowerCase();
-  
+
   if (trimmedEmail.length > 254) {
     return { valid: false, error: 'Email is too long' };
   }
-  
+
   if (!EMAIL_REGEX.test(trimmedEmail)) {
     return { valid: false, error: 'Invalid email format' };
   }
-  
+
   return { valid: true };
 }
 
@@ -77,19 +77,19 @@ function validatePassword(password: string): { valid: boolean; error?: string } 
   if (!password || typeof password !== 'string') {
     return { valid: false, error: 'Password is required' };
   }
-  
+
   if (password.length < MIN_PASSWORD_LENGTH) {
     return { valid: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` };
   }
-  
+
   if (password.length > MAX_PASSWORD_LENGTH) {
     return { valid: false, error: 'Password is too long' };
   }
-  
+
   if (!PASSWORD_REGEX.test(password)) {
     return { valid: false, error: 'Password must contain uppercase, lowercase, number, and special character' };
   }
-  
+
   return { valid: true };
 }
 
@@ -97,17 +97,17 @@ function validateName(name: string): { valid: boolean; error?: string } {
   if (!name || typeof name !== 'string') {
     return { valid: false, error: 'Name is required' };
   }
-  
+
   const trimmedName = name.trim();
-  
+
   if (trimmedName.length < 2) {
     return { valid: false, error: 'Name must be at least 2 characters' };
   }
-  
+
   if (trimmedName.length > 100) {
     return { valid: false, error: 'Name is too long' };
   }
-  
+
   return { valid: true };
 }
 
@@ -118,17 +118,17 @@ function sanitizeInput(input: string): string {
 function checkRateLimit(identifier: string): { allowed: boolean; resetIn?: number } {
   const now = Date.now();
   const attempt = loginAttempts.get(identifier);
-  
+
   if (!attempt || now > attempt.resetAt) {
     loginAttempts.set(identifier, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return { allowed: true };
   }
-  
+
   if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
     const resetIn = Math.ceil((attempt.resetAt - now) / 1000 / 60);
     return { allowed: false, resetIn };
   }
-  
+
   attempt.count++;
   return { allowed: true };
 }
@@ -155,7 +155,7 @@ const ensureSessionSecret = () => {
   }
 };
 
-const sessionMiddleware = memoize(() => {
+export const sessionMiddleware = memoize(() => {
   ensureSessionSecret();
   return session({
     secret: process.env.SESSION_SECRET!,
@@ -241,13 +241,13 @@ async function ensureBasicLoginUser(options: {
 }): Promise<User> {
   const { email, fullName, role, userId } = options;
   const lowerEmail = email.toLowerCase();
-  
+
   // Create unique organization per user for absolute isolation
   // Use userId or email hash as domain to ensure uniqueness
   const safeId = userId || `basic-${lowerEmail.replace(/[^a-z0-9.-]/gi, "-")}`;
   const domain = `user-${safeId}`;
   const orgName = lowerEmail.split("@")[0] || "User";
-  
+
   const organization = await storage.upsertOrganization({
     name: `${orgName.charAt(0).toUpperCase()}${orgName.slice(1)}'s Workspace`,
     domain, // Unique per user
@@ -513,11 +513,11 @@ export async function setupAuth(app: Express) {
     if (req.session.user) {
       return res.redirect("/");
     }
-    
+
     // Generate CSRF token
     const csrfToken = generateCSRFToken();
     req.session.csrfToken = csrfToken;
-    
+
     const { error, success } = req.query as Record<string, string | undefined>;
     res.type("html").send(
       renderAuthPage({
@@ -571,11 +571,11 @@ export async function setupAuth(app: Express) {
     if (basicAuthEnabled) {
       return res.redirect("/api/login?success=Basic%20login%20is%20enabled.%20Use%20any%20email%20to%20sign%20in.");
     }
-    
+
     // Generate CSRF token
     const csrfToken = generateCSRFToken();
     _req.session.csrfToken = csrfToken;
-    
+
     const { error, success } = _req.query as Record<string, string | undefined>;
     res.type("html").send(
       renderAuthPage({
@@ -617,11 +617,11 @@ export async function setupAuth(app: Express) {
       }
 
       const { email, password } = req.body ?? {};
-      
+
       // Rate limiting
       const clientId = getClientIdentifier(req);
       const rateLimitCheck = checkRateLimit(clientId);
-      
+
       if (!rateLimitCheck.allowed) {
         console.warn(`Rate limit exceeded for ${clientId}`);
         const msg = `Too many attempts. Please try again in ${rateLimitCheck.resetIn} minutes.`;
@@ -681,10 +681,10 @@ export async function setupAuth(app: Express) {
       const sessionUser = buildSessionUser(data.user, data.session);
       req.session.user = sessionUser;
       req.user = sessionUser;
-      
+
       // Clear rate limit on successful login
       loginAttempts.delete(clientId);
-      
+
       console.log(`✅ Login successful: ${sanitizedEmail}`);
       return isJson ? res.json({ success: true }) : res.redirect("/");
     } catch (err) {
@@ -711,7 +711,7 @@ export async function setupAuth(app: Express) {
       // Rate limiting
       const clientId = getClientIdentifier(req);
       const rateLimitCheck = checkRateLimit(clientId);
-      
+
       if (!rateLimitCheck.allowed) {
         console.warn(`Rate limit exceeded for signup: ${clientId}`);
         const msg = `Too many attempts. Please try again in ${rateLimitCheck.resetIn} minutes.`;
@@ -756,16 +756,16 @@ export async function setupAuth(app: Express) {
 
       if (error) {
         console.error(`❌ Signup failed for ${sanitizedEmail}:`, error.message);
-        
+
         // Handle duplicate email error specifically
         let message = error.message || "Unable to create account";
-        if (error.message?.includes('User already registered') || 
-            error.message?.includes('already been registered') ||
-            error.message?.includes('duplicate key value') ||
-            error.message?.includes('users_email_unique')) {
+        if (error.message?.includes('User already registered') ||
+          error.message?.includes('already been registered') ||
+          error.message?.includes('duplicate key value') ||
+          error.message?.includes('users_email_unique')) {
           message = "This email is already registered. Please use a different email or log in instead.";
         }
-        
+
         return isJson ? res.status(400).json({ message }) : res.redirect(`/api/signup?error=${encodeURIComponent(message)}`);
       }
 
@@ -773,12 +773,12 @@ export async function setupAuth(app: Express) {
         // Create local user record (organization will be created here)
         await ensureAppUser(data.user);
       }
-      
+
       // Clear rate limit on successful signup
       loginAttempts.delete(clientId);
-      
+
       console.log(`✅ Account created: ${sanitizedEmail}`);
-      
+
       // Check if email confirmation is required (session is null)
       if (data.user && !data.session) {
         const successMsg = "Account created! Please check your email to verify your account.";
@@ -789,16 +789,16 @@ export async function setupAuth(app: Express) {
       return isJson ? res.json({ success: true, message: successMsg }) : res.redirect(`/api/login?success=${encodeURIComponent(successMsg)}`);
     } catch (err: any) {
       console.error("Signup error:", err);
-      
+
       // Handle duplicate email error in catch block too
       let message = err?.message || "Unable to create account";
-      if (message?.includes('duplicate key value') || 
-          message?.includes('users_email_unique') ||
-          message?.includes('User already registered') ||
-          message?.includes('already been registered')) {
+      if (message?.includes('duplicate key value') ||
+        message?.includes('users_email_unique') ||
+        message?.includes('User already registered') ||
+        message?.includes('already been registered')) {
         message = "This email is already registered. Please use a different email or log in instead.";
       }
-      
+
       return isJson ? res.status(500).json({ message }) : res.redirect(`/api/signup?error=${encodeURIComponent(message)}`);
     }
   });
@@ -806,7 +806,7 @@ export async function setupAuth(app: Express) {
   // Auth callback endpoint for email verification and magic links
   app.get("/api/auth/callback", async (req, res) => {
     const { token_hash, type, code } = req.query;
-    
+
     try {
       // Handle email verification with token_hash (Supabase email verification)
       if (token_hash && type) {
@@ -822,7 +822,7 @@ export async function setupAuth(app: Express) {
 
         // Create user in app database if needed
         await ensureAppUser(data.user);
-        
+
         // Create session
         const sessionUser = buildSessionUser(data.user, data.session);
         req.session.user = sessionUser;
@@ -843,7 +843,7 @@ export async function setupAuth(app: Express) {
 
         // Create user in app database if needed
         await ensureAppUser(data.user);
-        
+
         // Create session
         const sessionUser = buildSessionUser(data.user, data.session);
         req.session.user = sessionUser;
@@ -876,16 +876,16 @@ async function refreshSession(sessionUser: AuthenticatedUser): Promise<Authentic
   if (!sessionUser.refresh_token) {
     return null;
   }
-  
+
   try {
     const { data, error } = await supabaseAuthClient.auth.refreshSession({
       refresh_token: sessionUser.refresh_token,
     });
-    
+
     if (error || !data.session || !data.user) {
       return null;
     }
-    
+
     await ensureAppUser(data.user);
     return buildSessionUser(data.user, data.session);
   } catch (error) {
@@ -914,7 +914,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const refreshed = await refreshSession(sessionUser);
     if (!refreshed) {
-      req.session.destroy(() => {});
+      req.session.destroy(() => { });
       return res.status(401).json({ message: "Unauthorized" });
     }
     req.session.user = refreshed;
@@ -922,7 +922,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Failed to refresh Supabase session:", error);
-    req.session.destroy(() => {});
+    req.session.destroy(() => { });
     res.status(401).json({ message: "Unauthorized" });
   }
 };

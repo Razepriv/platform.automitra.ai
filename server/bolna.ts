@@ -241,12 +241,12 @@ export class BolnaClient {
    */
   private normalizeWebhookUrl(url: string | null | undefined): string | null {
     if (!url) return null;
-    
+
     // If URL already has protocol, return as is
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url;
     }
-    
+
     // Add https:// if missing
     return `https://${url}`;
   }
@@ -279,7 +279,7 @@ export class BolnaClient {
       if (!response.ok) {
         const errorText = await response.text();
         let errorData: any = null;
-        
+
         // Try to parse error as JSON
         try {
           errorData = JSON.parse(errorText);
@@ -287,7 +287,7 @@ export class BolnaClient {
           // If not JSON, use the text as is
           errorData = { message: errorText };
         }
-        
+
         // Create error with full details
         const error = new Error(
           `Bolna API error (${response.status}): ${errorData.message || errorText}`
@@ -440,7 +440,7 @@ export class BolnaClient {
         if (task.tools_config?.synthesizer) {
           const synthesizer = task.tools_config.synthesizer;
           const voiceProvider = synthesizer.provider || agentData.voiceProvider;
-          
+
           // If ElevenLabs, ensure voice (name) and voice_id (ID) are set per API spec
           if (voiceProvider === "elevenlabs" || voiceProvider === "ElevenLabs") {
             if (!synthesizer.provider_config) {
@@ -572,7 +572,7 @@ export class BolnaClient {
       const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
     }
-    
+
     // CRITICAL: Ensure webhook URL is always set for real-time updates
     if (!webhookUrl) {
       console.warn(`[Bolna] ⚠️  WARNING: No webhook URL configured! Real-time updates will not work.`);
@@ -764,7 +764,7 @@ export class BolnaClient {
     // Determine if we need full update (PUT) or partial update (PATCH)
     // PUT is needed if updating: model, provider, temperature, maxTokens, maxDuration, language
     // or any task-related fields that require full tasks array
-    const needsFullUpdate = !!(updates.model || updates.provider || updates.temperature !== undefined || 
+    const needsFullUpdate = !!(updates.model || updates.provider || updates.temperature !== undefined ||
       updates.maxTokens !== undefined || updates.maxDuration !== undefined || updates.language ||
       updates.callForwardingEnabled !== undefined || updates.callForwardingNumber);
 
@@ -793,7 +793,7 @@ export class BolnaClient {
       const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
     }
-    
+
     console.log(`[Bolna] Updating webhook URL for agent ${agentId}:`, webhookUrl || 'none');
 
     // Get voiceId and voiceProvider from updates or existing config
@@ -933,10 +933,10 @@ export class BolnaClient {
     };
 
     // Add knowledge base support if knowledgeBaseIds provided
-    const knowledgeBaseIds = updates.knowledgeBaseIds !== undefined 
-      ? updates.knowledgeBaseIds 
+    const knowledgeBaseIds = updates.knowledgeBaseIds !== undefined
+      ? updates.knowledgeBaseIds
       : (existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.vector_store?.provider_config?.vector_ids);
-    
+
     if (knowledgeBaseIds && Array.isArray(knowledgeBaseIds) && knowledgeBaseIds.length > 0) {
       llmAgentConfig.agent_type = "knowledgebase_agent";
       llmAgentConfig.llm_config.vector_store = {
@@ -1085,7 +1085,7 @@ export class BolnaClient {
 
     // Only update synthesizer if voiceId or voiceProvider is explicitly provided in updates
     const shouldUpdateSynthesizer = updates.voiceId !== undefined || updates.voiceProvider !== undefined;
-    
+
     if (shouldUpdateSynthesizer) {
       // Get voiceId from updates - if not provided, try to extract from existing config
       let voiceId = updates.voiceId || (updates as any).voiceId;
@@ -1123,45 +1123,45 @@ export class BolnaClient {
           throw new Error("Voice ID is required when updating synthesizer. Please ensure the agent has a voice selected.");
         }
 
-      let synthesizerConfig: any = null;
-      if (voiceProvider === "elevenlabs") {
-        synthesizerConfig = {
-          provider: "elevenlabs",
-          provider_config: {
-            voice: voiceId,
-            voice_id: voiceId,
-            model: "eleven_turbo_v2_5",
-            sampling_rate: "16000",
-          },
-          stream: true,
-          audio_format: "wav",
-          buffer_size: 400,
-        };
-      } else if (voiceProvider === "polly") {
-        synthesizerConfig = {
-          provider: "polly",
-          provider_config: {
-            voice: voiceId,
-            engine: "generative",
-            sampling_rate: "8000",
-            language: updates.language || "en-US",
-          },
-          stream: true,
-          audio_format: "wav",
-          buffer_size: 150,
-        };
-      } else {
-        synthesizerConfig = {
-          provider: voiceProvider,
-          provider_config: {
-            voice: voiceId,
-            language: updates.language || "en-US",
-          },
-          stream: true,
-          audio_format: "wav",
-          buffer_size: 400,
-        };
-      }
+        let synthesizerConfig: any = null;
+        if (voiceProvider === "elevenlabs") {
+          synthesizerConfig = {
+            provider: "elevenlabs",
+            provider_config: {
+              voice: voiceId,
+              voice_id: voiceId,
+              model: "eleven_turbo_v2_5",
+              sampling_rate: "16000",
+            },
+            stream: true,
+            audio_format: "wav",
+            buffer_size: 400,
+          };
+        } else if (voiceProvider === "polly") {
+          synthesizerConfig = {
+            provider: "polly",
+            provider_config: {
+              voice: voiceId,
+              engine: "generative",
+              sampling_rate: "8000",
+              language: updates.language || "en-US",
+            },
+            stream: true,
+            audio_format: "wav",
+            buffer_size: 150,
+          };
+        } else {
+          synthesizerConfig = {
+            provider: voiceProvider,
+            provider_config: {
+              voice: voiceId,
+              language: updates.language || "en-US",
+            },
+            stream: true,
+            audio_format: "wav",
+            buffer_size: 400,
+          };
+        }
 
         config.agent_config!.synthesizer = synthesizerConfig;
       }
@@ -1175,11 +1175,11 @@ export class BolnaClient {
     // Include agent_prompts if systemPrompt is being updated
     if (updates.systemPrompt || (updates.callForwardingEnabled && updates.callForwardingNumber) || patchRequest.agent_config.synthesizer) {
       let systemPrompt = updates.systemPrompt;
-      
+
       if (!systemPrompt && existingAgentConfig?.agent_prompts?.task_1?.system_prompt) {
         systemPrompt = existingAgentConfig.agent_prompts.task_1.system_prompt;
       }
-      
+
       if (!systemPrompt) {
         systemPrompt = "You are a helpful AI voice assistant.";
       }
@@ -1535,6 +1535,7 @@ export class BolnaClient {
     this.ensureConfigured();
 
     // Use form-data package for Node.js FormData support
+    // @ts-ignore
     const FormData = (await import('form-data')).default;
     const formData = new FormData();
 
@@ -1586,18 +1587,18 @@ export class BolnaClient {
 
     // Generate a text document from agent data
     const documentContent = this.generateAgentDocument(agentData);
-    
+
     // Convert to Buffer (plain text file)
     const buffer = Buffer.from(documentContent, 'utf-8');
-    
+
     // For Bolna, we need to send as PDF. Since we have text, let's convert using a simple approach
     // Use PDFKit to generate a proper PDF
     const PDFDocument = (await import('pdfkit')).default;
-    
+
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument();
       const chunks: Buffer[] = [];
-      
+
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', async () => {
         try {
@@ -1614,47 +1615,47 @@ export class BolnaClient {
         }
       });
       doc.on('error', reject);
-      
+
       // Write content to PDF
       doc.fontSize(18).text(`Agent Knowledge Base: ${agentData.name}`, { align: 'center' });
       doc.moveDown(2);
-      
+
       if (agentData.description) {
         doc.fontSize(14).text('Description:', { underline: true });
         doc.fontSize(12).text(agentData.description);
         doc.moveDown();
       }
-      
+
       if (agentData.systemPrompt) {
         doc.fontSize(14).text('System Instructions:', { underline: true });
         doc.fontSize(10).text(agentData.systemPrompt);
         doc.moveDown();
       }
-      
+
       if (agentData.firstMessage) {
         doc.fontSize(14).text('Welcome Message:', { underline: true });
         doc.fontSize(12).text(agentData.firstMessage);
         doc.moveDown();
       }
-      
+
       if (agentData.userPrompt) {
         doc.fontSize(14).text('User Prompt Template:', { underline: true });
         doc.fontSize(10).text(agentData.userPrompt);
         doc.moveDown();
       }
-      
+
       if (agentData.additionalInfo) {
         doc.fontSize(14).text('Additional Information:', { underline: true });
         doc.fontSize(10).text(agentData.additionalInfo);
         doc.moveDown();
       }
-      
+
       if (agentData.customData && Object.keys(agentData.customData).length > 0) {
         doc.fontSize(14).text('Custom Data:', { underline: true });
         doc.fontSize(10).text(JSON.stringify(agentData.customData, null, 2));
         doc.moveDown();
       }
-      
+
       doc.end();
     });
   }
@@ -1672,46 +1673,46 @@ export class BolnaClient {
     additionalInfo?: string;
   }): string {
     const lines: string[] = [];
-    
+
     lines.push(`# Agent Knowledge Base: ${agentData.name}`);
     lines.push('');
-    
+
     if (agentData.description) {
       lines.push('## Description');
       lines.push(agentData.description);
       lines.push('');
     }
-    
+
     if (agentData.systemPrompt) {
       lines.push('## System Instructions');
       lines.push(agentData.systemPrompt);
       lines.push('');
     }
-    
+
     if (agentData.firstMessage) {
       lines.push('## Welcome Message');
       lines.push(agentData.firstMessage);
       lines.push('');
     }
-    
+
     if (agentData.userPrompt) {
       lines.push('## User Prompt Template');
       lines.push(agentData.userPrompt);
       lines.push('');
     }
-    
+
     if (agentData.additionalInfo) {
       lines.push('## Additional Information');
       lines.push(agentData.additionalInfo);
       lines.push('');
     }
-    
+
     if (agentData.customData && Object.keys(agentData.customData).length > 0) {
       lines.push('## Custom Data');
       lines.push(JSON.stringify(agentData.customData, null, 2));
       lines.push('');
     }
-    
+
     return lines.join('\n');
   }
 
@@ -1755,11 +1756,11 @@ export class BolnaClient {
   // If phoneNumberOrId looks like a UUID, use it directly; otherwise, look it up
   async setupInboundCall(agentId: string, phoneNumberOrId: string): Promise<any> {
     this.ensureConfigured();
-    
+
     // Check if it's already a UUID (phone_number_id format)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let phoneNumberId: string;
-    
+
     if (uuidRegex.test(phoneNumberOrId)) {
       // It's already a UUID, use it directly
       phoneNumberId = phoneNumberOrId;
@@ -1771,7 +1772,7 @@ export class BolnaClient {
       }
       phoneNumberId = foundId;
     }
-    
+
     return await this.request("/inbound/setup", {
       method: "POST",
       body: JSON.stringify({
