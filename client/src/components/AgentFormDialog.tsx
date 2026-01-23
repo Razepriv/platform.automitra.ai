@@ -395,8 +395,8 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                     </div>
                                   </SelectItem>
                                 ) : (
-                                  models.map((m) => (
-                                    <SelectItem key={m.id || m.name} value={m.name || "_unknown_"} className="cursor-pointer">
+                                  models.map((m, idx) => (
+                                    <SelectItem key={`${m.id || m.name}-${idx}`} value={m.name || "_unknown_"} className="cursor-pointer">
                                       {m.name}
                                     </SelectItem>
                                   ))
@@ -638,10 +638,10 @@ export const AgentFormDialog: React.FC<AgentFormDialogProps> = ({
                                   </div>
                                 </SelectItem>
                               ) : (
-                                voices.map((v) => (
+                                voices.map((v, idx) => (
                                   <SelectItem
-                                    key={v.voice_id || v.id}
-                                    value={v.voice_id || v.id || "_unknown_"}
+                                    key={`${v.voice_id || v.id || 'voice'}-${idx}`}
+                                    value={v.voice_id || v.id || `_unknown_${idx}`}
                                     className="cursor-pointer"
                                   >
                                     <div className="flex flex-col text-left">
