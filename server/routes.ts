@@ -699,41 +699,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Also fetch phone numbers from Exotel API if available
-      try {
-        const exotelNumbers = await exotelClient.getPhoneNumbers();
-
-        for (const exotelNumber of exotelNumbers) {
-          const phoneData: InsertPhoneNumber = {
-            organizationId: user.organizationId,
-            phoneNumber: exotelNumber.PhoneNumber,
-            provider: 'exotel',
-            exotelSid: exotelNumber.Sid,
-            friendlyName: exotelNumber.FriendlyName,
-            capabilities: {
-              voice: true,
-              sms: true,
-            },
-            status: 'active',
-          };
-
-          try {
-            const existingNumber = existingMap.get(exotelNumber.PhoneNumber);
-
-            if (!existingNumber) {
-              const created = await storage.createPhoneNumber(phoneData);
-              syncedNumbers.push(created);
-              existingMap.set(created.phoneNumber, created);
-            } else if (!syncedNumbers.find(n => n.phoneNumber === existingNumber.phoneNumber)) {
-              syncedNumbers.push(existingNumber);
-            }
-          } catch (err) {
-            console.error("Error syncing Exotel API phone number:", err);
-          }
-        }
-      } catch (exotelErr) {
-        console.warn("Could not fetch from Exotel API, using configured numbers only:", exotelErr);
-      }
+      // Exotel sync DISABLED - using Plivo only
+      // console.log('[Phone Sync] Exotel sync disabled - only Plivo numbers will be used');
 
       res.json({ syncedNumbers, total: syncedNumbers.length });
     } catch (error) {
