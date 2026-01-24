@@ -1,80 +1,3 @@
-// Agent Templates table - stores reusable agent configurations
-export const agentTemplates = pgTable("agent_templates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  config: jsonb("config"), // Store template config as JSON
-  createdBy: varchar("created_by").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_agent_templates_org").on(table.organizationId),
-  index("idx_agent_templates_created_by").on(table.createdBy),
-]);
-
-export const insertAgentTemplateSchema = createInsertSchema(agentTemplates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type InsertAgentTemplate = z.infer<typeof insertAgentTemplateSchema>;
-export type AgentTemplate = typeof agentTemplates.$inferSelect;
-
-// Batches table - stores Bolna batch campaign records
-export const batches = pgTable("batches", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull(),
-  batchId: varchar("batch_id").notNull().unique(), // Bolna batch ID
-  agentId: varchar("agent_id").notNull(),
-  
-  // Batch details
-  fileName: text("file_name").notNull(),
-  validContacts: integer("valid_contacts").notNull().default(0),
-  totalContacts: integer("total_contacts").notNull().default(0),
-  fromPhoneNumber: varchar("from_phone_number", { length: 20 }),
-  
-  // Status
-  status: varchar("status", { length: 50 }).notNull().default('created'), // created, scheduled, queued, executed, stopped
-  executionStatus: jsonb("execution_status"), // { completed: 1, ringing: 10, in_progress: 15 }
-  
-  // Scheduling
-  scheduledAt: timestamp("scheduled_at"),
-  
-  // Metadata
-  webhookUrl: text("webhook_url"),
-  metadata: jsonb("metadata"),
-  
-  createdBy: varchar("created_by"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  index("idx_batches_org").on(table.organizationId),
-  index("idx_batches_agent").on(table.agentId),
-  index("idx_batches_status").on(table.status),
-  index("idx_batches_bolna_id").on(table.batchId),
-]);
-
-export const batchesRelations = relations(batches, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [batches.organizationId],
-    references: [organizations.id],
-  }),
-  agent: one(aiAgents, {
-    fields: [batches.agentId],
-    references: [aiAgents.id],
-  }),
-}));
-
-export const insertBatchSchema = createInsertSchema(batches).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type InsertBatch = z.infer<typeof insertBatchSchema>;
-export type Batch = typeof batches.$inferSelect;
 import { sql } from 'drizzle-orm';
 import {
   index,
@@ -110,15 +33,15 @@ export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   domain: varchar("domain").unique(),
-  
+
   // Whitelabel configuration
   companyName: text("company_name"),
   logoUrl: text("logo_url"),
   primaryColor: varchar("primary_color", { length: 7 }),
-  
+
   // Wallet/Credits
   credits: real("credits").notNull().default(0),
-  
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -172,13 +95,13 @@ export const aiAgents = pgTable("ai_agents", {
   organizationId: varchar("organization_id").notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  
+
   // Voice configuration
   voiceId: varchar("voice_id"),
   voiceName: text("voice_name"),
   voiceType: varchar("voice_type", { length: 50 }), // Legacy field, kept for data compatibility
   language: varchar("language", { length: 10 }).notNull().default('en-US'),
-  
+
   // AI model configuration
   model: varchar("model", { length: 100 }).notNull().default('gpt-4'),
   provider: varchar("provider", { length: 50 }).default('openai'),
@@ -190,26 +113,26 @@ export const aiAgents = pgTable("ai_agents", {
   maxDuration: integer("max_duration").default(600), // seconds
   maxTokens: integer("max_tokens").default(150),
   voiceProvider: varchar("voice_provider", { length: 50 }).default('elevenlabs'),
-  
+
   // Knowledge base integration
   knowledgeBaseIds: text("knowledge_base_ids").array(),
-  
+
   // Exotel phone number assignment
   assignedPhoneNumberId: varchar("assigned_phone_number_id"),
   callForwardingEnabled: boolean("call_forwarding_enabled").default(false),
   callForwardingNumber: varchar("call_forwarding_number", { length: 20 }),
-  
+
   // Bolna integration
   bolnaAgentId: varchar("bolna_agent_id"),
   bolnaConfig: jsonb("bolna_config"),
-  
+
   // Status and metrics
   status: varchar("status", { length: 50 }).notNull().default('active'),
   totalCalls: integer("total_calls").notNull().default(0),
   totalMessages: integer("total_messages").notNull().default(0),
   avgRating: real("avg_rating"),
   lastUsedAt: timestamp("last_used_at"),
-  
+
   createdBy: varchar("created_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -262,16 +185,16 @@ export const phoneNumbers = pgTable("phone_numbers", {
   provider: varchar("provider", { length: 50 }).default('exotel'),
   friendlyName: text("friendly_name"),
   capabilities: jsonb("capabilities"),
-  
+
   // Exotel integration
   exotelSid: varchar("exotel_sid"),
   exotelStatus: varchar("exotel_status", { length: 50 }),
   exotelConfig: jsonb("exotel_config"),
-  
+
   // Status
   status: varchar("status", { length: 50 }).notNull().default('active'),
   assignedAgentId: varchar("assigned_agent_id"),
-  
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -300,7 +223,6 @@ export const insertPhoneNumberSchema = createInsertSchema(phoneNumbers).omit({
 export type InsertPhoneNumber = z.infer<typeof insertPhoneNumberSchema>;
 export type PhoneNumber = typeof phoneNumbers.$inferSelect;
 
-// Leads table - Contact/prospect management
 // Campaigns table - marketing/engagement automation
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -391,33 +313,34 @@ export const insertVisitSchema = createInsertSchema(visits).omit({
 export type InsertVisit = z.infer<typeof insertVisitSchema>;
 export type Visit = typeof visits.$inferSelect;
 
+// Leads table - Contact/prospect management
 export const leads = pgTable("leads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
   campaignId: varchar("campaign_id"),
   assignedAgentId: varchar("assigned_agent_id"),
-  
+
   // Contact information
   name: text("name").notNull(),
   email: varchar("email"),
   phone: varchar("phone"),
   company: text("company"),
-  
+
   // Lead status
   status: varchar("status", { length: 50 }).notNull().default('new'),
   source: varchar("source", { length: 100 }),
   tags: text("tags").array(),
-  
+
   // Interaction tracking
   lastContactedAt: timestamp("last_contacted_at"),
   nextFollowUpAt: timestamp("next_follow_up_at"),
   totalCalls: integer("total_calls").notNull().default(0),
-  
+
   // Notes and AI insights
   notes: text("notes"),
   aiSummary: text("ai_summary"),
   customFields: jsonb("custom_fields"),
-  
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -450,13 +373,13 @@ export const calls = pgTable("calls", {
   leadId: varchar("lead_id"),
   agentId: varchar("agent_id"),
   phoneNumberId: varchar("phone_number_id"),
-  
+
   // Call details
   contactName: text("contact_name"),
   contactPhone: varchar("contact_phone", { length: 20 }),
   callType: varchar("call_type", { length: 50 }).notNull().default('outbound'),
   direction: varchar("direction", { length: 20 }).notNull().default('outbound'),
-  
+
   // Call status and timing
   status: varchar("status", { length: 50 }).notNull().default('scheduled'),
   outcome: varchar("outcome", { length: 50 }),
@@ -464,25 +387,25 @@ export const calls = pgTable("calls", {
   scheduledAt: timestamp("scheduled_at"),
   startedAt: timestamp("started_at"),
   endedAt: timestamp("ended_at"),
-  
+
   // Recordings and transcripts
   recordingUrl: text("recording_url"),
   transcription: text("transcription"),
   aiSummary: text("ai_summary"),
   sentiment: varchar("sentiment", { length: 20 }),
-  
+
   // Integration IDs
   bolnaCallId: varchar("bolna_call_id"),
   exotelCallSid: varchar("exotel_call_sid"),
-  
+
   // Cost tracking (per minute rates in USD)
   exotelCostPerMinute: real("exotel_cost_per_minute").default(0),
   bolnaCostPerMinute: real("bolna_cost_per_minute").default(0),
-  
+
   // Metadata
   metadata: jsonb("metadata"),
   notes: text("notes"),
-  
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -543,6 +466,9 @@ export const knowledgeBase = pgTable("knowledge_base", {
   // Bolna RAG ID
   bolnaKbId: varchar("bolna_kb_id"),
 
+  // Metadata for Bolna integration
+  metadata: jsonb("metadata"),
+
   // Status
   status: varchar("status", { length: 50 }).notNull().default('active'),
 
@@ -585,22 +511,22 @@ export type UpdateKnowledgeBaseInput = z.infer<typeof updateKnowledgeBaseSchema>
 export const usageTracking = pgTable("usage_tracking", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
-  
+
   // Usage metrics
   date: timestamp("date").notNull(),
   totalCalls: integer("total_calls").notNull().default(0),
   totalMinutes: integer("total_minutes").notNull().default(0),
   totalMessages: integer("total_messages").notNull().default(0),
-  
+
   // Cost tracking
   bolnaCost: real("bolna_cost").default(0),
   exotelCost: real("exotel_cost").default(0),
   openaiCost: real("openai_cost").default(0),
   totalCost: real("total_cost").default(0),
-  
+
   // Metadata
   metadata: jsonb("metadata"),
-  
+
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_usage_tracking_org").on(table.organizationId),
@@ -614,6 +540,84 @@ export const insertUsageTrackingSchema = createInsertSchema(usageTracking).omit(
 
 export type InsertUsageTracking = z.infer<typeof insertUsageTrackingSchema>;
 export type UsageTracking = typeof usageTracking.$inferSelect;
+
+// Agent Templates table - stores reusable agent configurations
+export const agentTemplates = pgTable("agent_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  config: jsonb("config"), // Store template config as JSON
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_agent_templates_org").on(table.organizationId),
+  index("idx_agent_templates_created_by").on(table.createdBy),
+]);
+
+export const insertAgentTemplateSchema = createInsertSchema(agentTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertAgentTemplate = z.infer<typeof insertAgentTemplateSchema>;
+export type AgentTemplate = typeof agentTemplates.$inferSelect;
+
+// Batches table - stores Bolna batch campaign records
+export const batches = pgTable("batches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  batchId: varchar("batch_id").notNull().unique(), // Bolna batch ID
+  agentId: varchar("agent_id").notNull(),
+
+  // Batch details
+  fileName: text("file_name").notNull(),
+  validContacts: integer("valid_contacts").notNull().default(0),
+  totalContacts: integer("total_contacts").notNull().default(0),
+  fromPhoneNumber: varchar("from_phone_number", { length: 20 }),
+
+  // Status
+  status: varchar("status", { length: 50 }).notNull().default('created'), // created, scheduled, queued, executed, stopped
+  executionStatus: jsonb("execution_status"), // { completed: 1, ringing: 10, in_progress: 15 }
+
+  // Scheduling
+  scheduledAt: timestamp("scheduled_at"),
+
+  // Metadata
+  webhookUrl: text("webhook_url"),
+  metadata: jsonb("metadata"),
+
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_batches_org").on(table.organizationId),
+  index("idx_batches_agent").on(table.agentId),
+  index("idx_batches_status").on(table.status),
+  index("idx_batches_bolna_id").on(table.batchId),
+]);
+
+export const batchesRelations = relations(batches, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [batches.organizationId],
+    references: [organizations.id],
+  }),
+  agent: one(aiAgents, {
+    fields: [batches.agentId],
+    references: [aiAgents.id],
+  }),
+}));
+
+export const insertBatchSchema = createInsertSchema(batches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBatch = z.infer<typeof insertBatchSchema>;
+export type Batch = typeof batches.$inferSelect;
 
 // Analytics data types
 export type DashboardMetrics = {

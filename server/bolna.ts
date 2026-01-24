@@ -68,9 +68,11 @@ interface BolnaAgentConfigV2 {
           provider: string;
           provider_config: {
             voice: string;
+            voice_id?: string;
             engine?: string;
             sampling_rate?: string;
             language: string;
+            model?: string;
           };
           stream: boolean;
           buffer_size: number;
@@ -417,13 +419,84 @@ export class BolnaClient {
     }
   }
 
+  /**
+   * Initiate a call using Bolna API v2 (POST /agent/initiate)
+   * This is the preferred method for initiating calls
+   */
+  async initiateCallV2(params: {
+    agent_id: string;
+    recipient_phone_number: string;
+    from_phone_number?: string;
+    user_data?: any;
+    metadata?: any;
+  }): Promise<{ call_id: string; execution_id?: string; status: string }> {
+    this.ensureConfigured();
+    console.log(`[Bolna] Initiating V2 call for agent ${params.agent_id} to ${params.recipient_phone_number}`);
+
+    try {
+      // Build request body
+      const body: any = {
+        agent_id: params.agent_id,
+        recipient_phone_number: params.recipient_phone_number,
+      };
+
+      if (params.from_phone_number) {
+        body.recipient_data = {
+          ...body.recipient_data,
+          from_phone_number: params.from_phone_number
+        };
+      }
+
+      if (params.user_data) {
+        body.user_data = params.user_data;
+      }
+
+      // Also support legacy metadata if needed
+      if (params.metadata) {
+        body.metadata = params.metadata;
+      }
+
+      const response = await this.request<any>('/agent/initiate', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+
+      console.log('[Bolna] Call initiated successfully (V2):', response);
+      return response;
+    } catch (error) {
+      console.error('[Bolna] Error initiating call (V2):', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initiate a call using Bolna API v1 (POST /call)
+   * Legacy method, used as fallback
+   */
+  async initiateCall(params: BolnaCallRequest): Promise<BolnaCallResponse> {
+    this.ensureConfigured();
+    console.log(`[Bolna] Initiating V1 call for agent ${params.agent_id} to ${params.recipient_phone_number}`);
+
+    try {
+      const response = await this.request<BolnaCallResponse>('/call', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+
+      console.log('[Bolna] Call initiated successfully (V1):', response);
+      return response;
+    } catch (error) {
+      console.error('[Bolna] Error initiating call (V1):', error);
+      throw error;
+    }
+  }
   async createAgent(agentData: AiAgent): Promise<BolnaAgent> {
     this.ensureConfigured();
 
     // If full Bolna config is provided, use it directly but validate/ensure required fields
-    if (agentData.bolnaConfig) {
+    if ((agentData as any).bolnaConfig) {
       console.log('[Bolna] Creating agent using provided full configuration');
-      const config = agentData.bolnaConfig as BolnaAgentConfigV2;
+      const config = (agentData as any).bolnaConfig as BolnaAgentConfigV2;
 
       // Ensure webhook URL is set if not provided
       if (!config.agent_config.webhook_url && process.env.PUBLIC_WEBHOOK_URL) {
@@ -439,16 +512,16 @@ export class BolnaClient {
         const task = config.agent_config.tasks[0];
         if (task.tools_config?.synthesizer) {
           const synthesizer = task.tools_config.synthesizer;
-          const voiceProvider = synthesizer.provider || agentData.voiceProvider;
+          const voiceProvider = synthesizer.provider || (agentData as any).voiceProvider;
 
           // If ElevenLabs, ensure voice (name) and voice_id (ID) are set per API spec
           if (voiceProvider === "elevenlabs" || voiceProvider === "ElevenLabs") {
             if (!synthesizer.provider_config) {
-              synthesizer.provider_config = {};
+              synthesizer.provider_config = { voice: '', language: 'en-US' };
             }
             // Use voiceId from agentData if not set in config
-            const voiceId = agentData.voiceId || synthesizer.provider_config.voice_id;
-            const voiceName = agentData.voiceName || synthesizer.provider_config.voice || voiceId;
+            const voiceId = (agentData as any).voiceId || synthesizer.provider_config.voice_id;
+            const voiceName = (agentData as any).voiceName || synthesizer.provider_config.voice || voiceId;
             if (voiceId) {
               synthesizer.provider_config.voice = voiceName; // Voice name (string)
               synthesizer.provider_config.voice_id = voiceId; // Unique voice ID
@@ -464,11 +537,11 @@ export class BolnaClient {
             }
           } else if (synthesizer.provider_config) {
             // For other providers, ensure voice is set
-            if (!synthesizer.provider_config.voice && agentData.voiceId) {
-              synthesizer.provider_config.voice = agentData.voiceId;
+            if (!synthesizer.provider_config.voice && (agentData as any).voiceId) {
+              synthesizer.provider_config.voice = (agentData as any).voiceId;
             }
-            if (!synthesizer.provider_config.language && agentData.language) {
-              synthesizer.provider_config.language = agentData.language;
+            if (!synthesizer.provider_config.language && (agentData as any).language) {
+              synthesizer.provider_config.language = (agentData as any).language;
             }
           }
         }
@@ -481,7 +554,7 @@ export class BolnaClient {
         agent_config: config.agent_config,
         agent_prompts: {
           task_1: {
-            system_prompt: agentData.systemPrompt || "You are a helpful AI voice assistant."
+            system_prompt: (agentData as any).systemPrompt || "You are a helpful AI voice assistant."
           }
         }
       };
@@ -494,20 +567,20 @@ export class BolnaClient {
 
     console.log('[Bolna] Creating agent with data:', JSON.stringify({
       name: agentData.name,
-      voiceId: agentData.voiceId,
-      voiceProvider: agentData.voiceProvider,
-      model: agentData.model,
-      provider: agentData.provider,
+      voiceId: (agentData as any).voiceId,
+      voiceProvider: (agentData as any).voiceProvider,
+      model: (agentData as any).model,
+      provider: (agentData as any).provider,
     }, null, 2));
 
     // Validate required fields
-    if (!agentData.voiceId) {
+    if (!(agentData as any).voiceId) {
       throw new Error("Voice ID is required to create a Bolna agent. Please select a voice first.");
     }
 
     // Determine voice provider from voiceProvider field
-    const voiceProvider = agentData.voiceProvider && agentData.voiceProvider !== 'all'
-      ? agentData.voiceProvider
+    const voiceProvider = (agentData as any).voiceProvider && (agentData as any).voiceProvider !== 'all'
+      ? (agentData as any).voiceProvider
       : "elevenlabs";
 
     // Build synthesizer config - Bolna requires specific fields per provider
@@ -517,8 +590,8 @@ export class BolnaClient {
       // ElevenLabs requires voice (name), voice_id (ID), and model per API docs
       // According to API: voice is the name, voice_id is the unique ID
       // If voiceName is not available, we need to use voiceId for both (some voices may not have separate names)
-      const voiceName = agentData.voiceName || agentData.voiceId || "";
-      if (!agentData.voiceId) {
+      const voiceName = (agentData as any).voiceName || (agentData as any).voiceId || "";
+      if (!(agentData as any).voiceId) {
         throw new Error("Voice ID is required for ElevenLabs. Please select a voice.");
       }
       if (!voiceName) {
@@ -528,7 +601,7 @@ export class BolnaClient {
         provider: "elevenlabs",
         provider_config: {
           voice: voiceName, // Voice name (string)
-          voice_id: agentData.voiceId, // Unique voice ID
+          voice_id: (agentData as any).voiceId, // Unique voice ID
           model: "eleven_turbo_v2_5",
           sampling_rate: "16000",
         },
@@ -540,10 +613,10 @@ export class BolnaClient {
       synthesizerConfig = {
         provider: "polly",
         provider_config: {
-          voice: agentData.voiceId,
+          voice: (agentData as any).voiceId,
           engine: "generative",
           sampling_rate: "8000",
-          language: agentData.language || "en-US",
+          language: (agentData as any).language || "en-US",
         },
         stream: true,
         audio_format: "wav",
@@ -554,8 +627,8 @@ export class BolnaClient {
       synthesizerConfig = {
         provider: voiceProvider,
         provider_config: {
-          voice: agentData.voiceId,
-          language: agentData.language || "en-US",
+          voice: (agentData as any).voiceId,
+          language: (agentData as any).language || "en-US",
         },
         stream: true,
         audio_format: "wav",
@@ -566,8 +639,8 @@ export class BolnaClient {
     // Build minimal required config for Bolna v2 API
     // Use agent's webhookUrl if provided, otherwise fall back to env variable
     let webhookUrl: string | null = null;
-    if (agentData.webhookUrl) {
-      webhookUrl = this.normalizeWebhookUrl(agentData.webhookUrl);
+    if ((agentData as any).webhookUrl) {
+      webhookUrl = this.normalizeWebhookUrl((agentData as any).webhookUrl);
     } else if (process.env.PUBLIC_WEBHOOK_URL) {
       const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
@@ -591,11 +664,11 @@ export class BolnaClient {
       agent_flow_type: "streaming",
       llm_config: {
         agent_flow_type: "streaming",
-        provider: agentData.provider || "openai",
-        family: agentData.provider || "openai",
-        model: agentData.model || "gpt-3.5-turbo",
-        max_tokens: agentData.maxTokens || 150,
-        temperature: agentData.temperature || 0.7,
+        provider: (agentData as any).provider || "openai",
+        family: (agentData as any).provider || "openai",
+        model: (agentData as any).model || "gpt-3.5-turbo",
+        max_tokens: (agentData as any).maxTokens || 150,
+        temperature: (agentData as any).temperature || 0.7,
         presence_penalty: 0,
         frequency_penalty: 0,
         base_url: "https://api.openai.com/v1",
@@ -609,39 +682,39 @@ export class BolnaClient {
     };
 
     // Add knowledge base support if knowledgeBaseIds provided
-    if (agentData.knowledgeBaseIds && Array.isArray(agentData.knowledgeBaseIds) && agentData.knowledgeBaseIds.length > 0) {
+    if ((agentData as any).knowledgeBaseIds && Array.isArray((agentData as any).knowledgeBaseIds) && (agentData as any).knowledgeBaseIds.length > 0) {
       llmAgentConfig.agent_type = "knowledgebase_agent";
       llmAgentConfig.llm_config.vector_store = {
         provider: "lancedb",
         provider_config: {
-          vector_ids: agentData.knowledgeBaseIds, // Array of knowledge base UUIDs
+          vector_ids: (agentData as any).knowledgeBaseIds, // Array of knowledge base UUIDs
         },
       };
     }
 
     // Build ingest_source_config if provided (for inbound calls)
     let ingestSourceConfig: any = undefined;
-    if (agentData.ingestSourceType) {
+    if ((agentData as any).ingestSourceType) {
       ingestSourceConfig = {
-        source_type: agentData.ingestSourceType,
+        source_type: (agentData as any).ingestSourceType,
       };
-      if (agentData.ingestSourceType === "api") {
-        ingestSourceConfig.source_url = agentData.ingestSourceUrl;
-        ingestSourceConfig.source_auth_token = agentData.ingestSourceAuthToken;
-      } else if (agentData.ingestSourceType === "csv") {
-        ingestSourceConfig.source_name = agentData.ingestSourceName;
-      } else if (agentData.ingestSourceType === "google_sheet") {
-        ingestSourceConfig.source_url = agentData.ingestSourceUrl;
-        ingestSourceConfig.source_name = agentData.ingestSourceName;
+      if ((agentData as any).ingestSourceType === "api") {
+        ingestSourceConfig.source_url = (agentData as any).ingestSourceUrl;
+        ingestSourceConfig.source_auth_token = (agentData as any).ingestSourceAuthToken;
+      } else if ((agentData as any).ingestSourceType === "csv") {
+        ingestSourceConfig.source_name = (agentData as any).ingestSourceName;
+      } else if ((agentData as any).ingestSourceType === "google_sheet") {
+        ingestSourceConfig.source_url = (agentData as any).ingestSourceUrl;
+        ingestSourceConfig.source_name = (agentData as any).ingestSourceName;
       }
     }
 
     const config: BolnaAgentConfigV2 = {
       agent_config: {
         agent_name: agentData.name,
-        agent_welcome_message: agentData.firstMessage || "Hello! How can I help you today?",
+        agent_welcome_message: (agentData as any).firstMessage || "Hello! How can I help you today?",
         webhook_url: webhookUrl,
-        agent_type: agentData.agentType || "other",
+        agent_type: (agentData as any).agentType || "other",
         tasks: [
           {
             task_type: "conversation",
@@ -651,7 +724,7 @@ export class BolnaClient {
               transcriber: {
                 provider: (agentData as any).transcriberProvider || "deepgram",
                 model: (agentData as any).transcriberModel || "nova-2",
-                language: (agentData as any).transcriberLanguage || (agentData.language || "en").split('-')[0] || "en",
+                language: (agentData as any).transcriberLanguage || ((agentData as any).language || "en").split('-')[0] || "en",
                 stream: true,
                 sampling_rate: (agentData as any).transcriberSamplingRate || 16000,
                 encoding: "linear16",
@@ -672,21 +745,21 @@ export class BolnaClient {
               pipelines: [["transcriber", "llm", "synthesizer"]],
             },
             task_config: {
-              hangup_after_silence: agentData.hangupAfterSilence || 10,
-              incremental_delay: agentData.incrementalDelay || 400,
-              number_of_words_for_interruption: agentData.numberOfWordsForInterruption || 2,
-              hangup_after_LLMCall: agentData.hangupAfterLLMCall || false,
-              call_cancellation_prompt: agentData.callCancellationPrompt || null,
-              backchanneling: agentData.backchanneling || false,
-              backchanneling_message_gap: agentData.backchannelingMessageGap || 5,
-              backchanneling_start_delay: agentData.backchannelingStartDelay || 5,
-              ambient_noise: agentData.ambientNoise || false,
-              ambient_noise_track: agentData.ambientNoiseTrack || "office-ambience",
-              call_terminate: agentData.maxDuration || 90,
-              voicemail: agentData.voicemail || false,
-              inbound_limit: agentData.inboundLimit !== undefined ? agentData.inboundLimit : -1,
+              hangup_after_silence: (agentData as any).hangupAfterSilence || 10,
+              incremental_delay: (agentData as any).incrementalDelay || 400,
+              number_of_words_for_interruption: (agentData as any).numberOfWordsForInterruption || 2,
+              hangup_after_LLMCall: (agentData as any).hangupAfterLLMCall || false,
+              call_cancellation_prompt: (agentData as any).callCancellationPrompt || null,
+              backchanneling: (agentData as any).backchanneling || false,
+              backchanneling_message_gap: (agentData as any).backchannelingMessageGap || 5,
+              backchanneling_start_delay: (agentData as any).backchannelingStartDelay || 5,
+              ambient_noise: (agentData as any).ambientNoise || false,
+              ambient_noise_track: (agentData as any).ambientNoiseTrack || "office-ambience",
+              call_terminate: (agentData as any).maxDuration || 90,
+              voicemail: (agentData as any).voicemail || false,
+              inbound_limit: (agentData as any).inboundLimit !== undefined ? (agentData as any).inboundLimit : -1,
               whitelist_phone_numbers: null, // Per API: null or array of E.164 phone numbers
-              disallow_unknown_numbers: agentData.disallowUnknownNumbers || false,
+              disallow_unknown_numbers: (agentData as any).disallowUnknownNumbers || false,
             },
           },
         ],
@@ -695,9 +768,9 @@ export class BolnaClient {
     };
 
     // Build request with agent_prompts at top level (required by API)
-    let systemPrompt = agentData.systemPrompt || "You are a helpful AI voice assistant.";
-    if (agentData.callForwardingEnabled && agentData.callForwardingNumber) {
-      systemPrompt += `\n\nIf the user asks to speak to a human or if you cannot help them, use the transferCall tool to transfer the call to ${agentData.callForwardingNumber}.`;
+    let systemPrompt = (agentData as any).systemPrompt || "You are a helpful AI voice assistant.";
+    if ((agentData as any).callForwardingEnabled && (agentData as any).callForwardingNumber) {
+      systemPrompt += `\n\nIf the user asks to speak to a human or if you cannot help them, use the transferCall tool to transfer the call to ${(agentData as any).callForwardingNumber}.`;
     }
 
     const request: BolnaAgentRequestV2 = {
@@ -725,13 +798,7 @@ export class BolnaClient {
       throw error;
     }
 
-    return {
-      agent_id: response.agent_id,
-      agent_name: response.agent_name,
-      agent_type: response.agent_type,
-      created_at: response.created_at,
-      updated_at: response.updated_at,
-    };
+
   }
 
   /**
@@ -746,304 +813,158 @@ export class BolnaClient {
     });
   }
 
-  async updateAgent(
-    agentId: string,
-    updates: Partial<AiAgent>
-  ): Promise<BolnaAgent> {
-    this.ensureConfigured();
+  async updateAgent(agentId: string, updates: Partial<AiAgent>, existingAgentConfig: any = null): Promise<BolnaAgent> {
+    // If we have a full config, do a full update
+    // Check if we need to do a full update (PUT) or partial update (PATCH)
+    // A full update is needed if we're changing core structure or providing a full config object
 
-    // Get existing agent config from Bolna to preserve settings if not updating
-    let existingAgentConfig: any = null;
-    try {
-      const existing = await this.getAgent(agentId);
-      existingAgentConfig = existing;
-    } catch (e) {
-      console.warn(`[Bolna] Could not fetch existing agent config: ${(e as Error).message}`);
+    // For now, let's use the logic that if bolnaConfig is provided in updates, use that full config
+    if ((updates as any).bolnaConfig) {
+      console.log(`[Bolna] Full update for agent ${agentId}`);
+      return this.updateAgentFull(agentId, updates, (updates as any).bolnaConfig);
+    }
+
+    // Otherwise map individual fields to a partial update structure if possible, 
+    // BUT Bolna API typically favors PUT for configuration changes. 
+    // To safe, we'll fetch the existing config (if not provided), merge, and send a full update.
+
+    console.log(`[Bolna] Update requested for agent ${agentId}`, updates);
+
+    let currentConfig = existingAgentConfig;
+    if (!currentConfig) {
+      try {
+        currentConfig = await this.getAgent(agentId);
+      } catch (err) {
+        console.warn(`[Bolna] Could not fetch existing agent ${agentId}, creating fresh config`);
+        currentConfig = {};
+      }
     }
 
     // Determine if we need full update (PUT) or partial update (PATCH)
     // PUT is needed if updating: model, provider, temperature, maxTokens, maxDuration, language
     // or any task-related fields that require full tasks array
     const needsFullUpdate = !!(updates.model || updates.provider || updates.temperature !== undefined ||
-      updates.maxTokens !== undefined || updates.maxDuration !== undefined || updates.language ||
-      updates.callForwardingEnabled !== undefined || updates.callForwardingNumber);
+      (updates as any).maxTokens !== undefined || (updates as any).maxDuration !== undefined || updates.language ||
+      (updates as any).callForwardingEnabled !== undefined || (updates as any).callForwardingNumber);
 
     if (needsFullUpdate) {
       // Use PUT for full agent update (requires complete agent_config with tasks)
-      return await this.updateAgentFull(agentId, updates, existingAgentConfig);
+      return await this.updateAgentFull(agentId, updates, currentConfig);
     } else {
       // Use PATCH for partial updates (only specific fields)
-      return await this.updateAgentPartial(agentId, updates, existingAgentConfig);
+      return await this.updateAgentPartial(agentId, updates, currentConfig);
     }
   }
 
-  // Full agent update using PUT - requires complete agent_config with tasks
-  private async updateAgentFull(
+  async updateAgentFull(
     agentId: string,
     updates: Partial<AiAgent>,
     existingAgentConfig: any
   ): Promise<BolnaAgent> {
+    this.ensureConfigured();
+
+    // Start with existing config or a skeleton
+    let payload = existingAgentConfig || { agent_config: {} };
+
+    // If the existing config has the wrapper 'agent_config', use it, otherwise assume top level is agent_config
+    // The API expects { agent_config: { ... } }
+
+    // Safety check on structure
+    if (!payload.agent_config) {
+      // If the payload itself looks like an agent config (has tasks or agent_name at top level), wrap it
+      if (payload.agent_name || payload.tasks) {
+        payload = { agent_config: payload };
+      } else {
+        payload = { agent_config: {} };
+      }
+    }
+
+    const config = payload.agent_config;
+
+    // Apply updates
+    if (updates.name) config.agent_name = updates.name;
+    if (updates.firstMessage) config.agent_welcome_message = updates.firstMessage;
+
     // Use agent's webhookUrl if provided in updates, otherwise use existing, otherwise fall back to env variable
     let webhookUrl: string | null = null;
-    if (updates.webhookUrl !== undefined) {
-      webhookUrl = this.normalizeWebhookUrl(updates.webhookUrl || null);
+    if ((updates as any).webhookUrl !== undefined) {
+      webhookUrl = this.normalizeWebhookUrl((updates as any).webhookUrl || null);
     } else if (existingAgentConfig?.agent_config?.webhook_url) {
       webhookUrl = this.normalizeWebhookUrl(existingAgentConfig.agent_config.webhook_url);
     } else if (process.env.PUBLIC_WEBHOOK_URL) {
       const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
     }
+    config.webhook_url = webhookUrl;
 
-    console.log(`[Bolna] Updating webhook URL for agent ${agentId}:`, webhookUrl || 'none');
-
-    // Get voiceId and voiceProvider from updates or existing config
-    let voiceId = updates.voiceId || (updates as any).voiceId;
-    let voiceProvider = (updates.voiceProvider && updates.voiceProvider !== 'all')
-      ? updates.voiceProvider
-      : (updates as any).voiceProvider;
-
-    // If voiceId not in updates, try to get from existing agent config
-    if (!voiceId && existingAgentConfig) {
-      try {
-        const tasks = existingAgentConfig.agent_config?.tasks || [];
-        if (tasks.length > 0) {
-          const synthesizer = tasks[0]?.tools_config?.synthesizer;
-          if (synthesizer?.provider_config?.voice_id) {
-            voiceId = synthesizer.provider_config.voice_id;
-            voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
-          } else if (synthesizer?.provider_config?.voice) {
-            voiceId = synthesizer.provider_config.voice;
-            voiceProvider = synthesizer.provider || voiceProvider || "elevenlabs";
-          }
-        }
-      } catch (e) {
-        console.warn(`[Bolna] Could not extract voiceId from existing config: ${(e as Error).message}`);
-      }
-    }
-
-    if (!voiceId) {
-      throw new Error("Voice ID is required. Please ensure the agent has a voice selected.");
-    }
-
-    // Default voiceProvider if still not set
-    if (!voiceProvider || voiceProvider === 'all') {
-      voiceProvider = "elevenlabs";
-    }
-
-    // Build full agent config with tasks (required for PUT)
-    const agentName = updates.name || existingAgentConfig?.agent_config?.agent_name || "AI Agent";
-    const agentWelcomeMessage = updates.firstMessage || updates.systemPrompt || existingAgentConfig?.agent_config?.agent_welcome_message || "Hello! How can I help you today?";
-
-    // Build synthesizer config
-    let synthesizerConfig: any;
-    if (voiceProvider === "elevenlabs") {
-      // Get voice name from updates or existing config
-      const voiceName = updates.voiceName || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.synthesizer?.provider_config?.voice || voiceId;
-      synthesizerConfig = {
-        provider: "elevenlabs",
-        provider_config: {
-          voice: voiceName, // Voice name (string)
-          voice_id: voiceId, // Unique voice ID
-          model: "eleven_turbo_v2_5",
-          sampling_rate: "16000",
-        },
-        stream: true,
-        audio_format: "wav",
-        buffer_size: 400,
-      };
-    } else if (voiceProvider === "polly") {
-      synthesizerConfig = {
-        provider: "polly",
-        provider_config: {
-          voice: voiceId,
-          engine: "generative",
-          sampling_rate: "8000",
-          language: updates.language || "en-US",
-        },
-        stream: true,
-        audio_format: "wav",
-        buffer_size: 150,
-      };
-    } else {
-      synthesizerConfig = {
-        provider: voiceProvider,
-        provider_config: {
-          voice: voiceId,
-          language: updates.language || "en-US",
-        },
-        stream: true,
-        audio_format: "wav",
-        buffer_size: 400,
-      };
-    }
-
-    // Build system prompt
-    let systemPrompt = updates.systemPrompt || existingAgentConfig?.agent_prompts?.task_1?.system_prompt || "You are a helpful AI voice assistant.";
-    if (updates.callForwardingEnabled && updates.callForwardingNumber) {
-      systemPrompt += `\n\nIf the user asks to speak to a human or if you cannot help them, use the transferCall tool to transfer the call to ${updates.callForwardingNumber}.`;
-    }
-
-    // Construct API tools if call forwarding is enabled
-    let apiTools = null;
-    if (updates.callForwardingEnabled && updates.callForwardingNumber) {
-      apiTools = {
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "transferCall",
-              description: "Transfers the call to a human agent or another department.",
-              parameters: {
-                type: "object",
-                properties: {
-                  phoneNumber: {
-                    type: "string",
-                    description: "The phone number to transfer to."
-                  }
-                },
-                required: ["phoneNumber"]
-              }
-            }
-          }
-        ]
-      };
-    }
-
-    // Build LLM agent config - support knowledge base if knowledgeBaseIds provided
-    let llmAgentConfig: any = {
-      agent_type: "simple_llm_agent",
-      agent_flow_type: "streaming",
-      llm_config: {
-        agent_flow_type: "streaming",
-        provider: updates.provider || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.provider || "openai",
-        family: updates.provider || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.family || "openai",
-        model: updates.model || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.model || "gpt-3.5-turbo",
-        max_tokens: updates.maxTokens !== undefined ? updates.maxTokens : (existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.max_tokens || 150),
-        temperature: updates.temperature !== undefined ? updates.temperature : (existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.temperature || 0.7),
-        presence_penalty: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.presence_penalty ?? 0,
-        frequency_penalty: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.frequency_penalty ?? 0,
-        base_url: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.base_url || "https://api.openai.com/v1",
-        top_p: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.top_p ?? 0.9,
-        min_p: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.min_p ?? 0.1,
-        top_k: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.top_k ?? 0,
-        request_json: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.request_json ?? true,
-        summarization_details: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.summarization_details ?? null,
-        extraction_details: existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.extraction_details ?? null,
-      },
-    };
-
-    // Add knowledge base support if knowledgeBaseIds provided
-    const knowledgeBaseIds = updates.knowledgeBaseIds !== undefined
-      ? updates.knowledgeBaseIds
-      : (existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.llm_agent?.llm_config?.vector_store?.provider_config?.vector_ids);
-
-    if (knowledgeBaseIds && Array.isArray(knowledgeBaseIds) && knowledgeBaseIds.length > 0) {
-      llmAgentConfig.agent_type = "knowledgebase_agent";
-      llmAgentConfig.llm_config.vector_store = {
-        provider: "lancedb",
-        provider_config: {
-          vector_ids: knowledgeBaseIds, // Array of knowledge base UUIDs
-        },
-      };
-    }
-
-    // Build ingest_source_config if provided (for inbound calls)
-    let ingestSourceConfig: any = undefined;
-    if (updates.ingestSourceType !== undefined || existingAgentConfig?.agent_config?.ingest_source_config) {
-      const sourceType = updates.ingestSourceType || existingAgentConfig?.agent_config?.ingest_source_config?.source_type;
-      if (sourceType) {
-        ingestSourceConfig = {
-          source_type: sourceType,
-        };
-        if (sourceType === "api") {
-          ingestSourceConfig.source_url = updates.ingestSourceUrl || existingAgentConfig?.agent_config?.ingest_source_config?.source_url;
-          ingestSourceConfig.source_auth_token = updates.ingestSourceAuthToken || existingAgentConfig?.agent_config?.ingest_source_config?.source_auth_token;
-        } else if (sourceType === "csv") {
-          ingestSourceConfig.source_name = updates.ingestSourceName || existingAgentConfig?.agent_config?.ingest_source_config?.source_name;
-        } else if (sourceType === "google_sheet") {
-          ingestSourceConfig.source_url = updates.ingestSourceUrl || existingAgentConfig?.agent_config?.ingest_source_config?.source_url;
-          ingestSourceConfig.source_name = updates.ingestSourceName || existingAgentConfig?.agent_config?.ingest_source_config?.source_name;
-        }
-      }
-    }
-
-    // Build full agent config (PUT requires complete structure)
-    const fullConfig: BolnaAgentRequestV2 = {
-      agent_config: {
-        agent_name: agentName,
-        agent_welcome_message: agentWelcomeMessage,
-        webhook_url: webhookUrl,
-        agent_type: updates.agentType || existingAgentConfig?.agent_config?.agent_type || "other",
-        tasks: [
-          {
-            task_type: "conversation",
-            tools_config: {
-              llm_agent: llmAgentConfig,
-              synthesizer: synthesizerConfig,
-              transcriber: {
-                provider: (updates as any).transcriberProvider || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.transcriber?.provider || "deepgram",
-                model: (updates as any).transcriberModel || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.transcriber?.model || "nova-2",
-                language: (updates as any).transcriberLanguage || (updates.language || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.transcriber?.language || "en").split('-')[0] || "en",
-                stream: true,
-                sampling_rate: (updates as any).transcriberSamplingRate || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.transcriber?.sampling_rate || 16000,
-                encoding: "linear16",
-                endpointing: (updates as any).transcriberEndpointing || existingAgentConfig?.agent_config?.tasks?.[0]?.tools_config?.transcriber?.endpointing || 100,
-              },
-              input: {
-                provider: "plivo", // Always use Plivo (Exotel disabled)
-                format: "wav",
-              },
-              output: {
-                provider: "plivo", // Always use Plivo (Exotel disabled)
-                format: "wav",
-              },
-              api_tools: apiTools,
-            },
-            toolchain: {
-              execution: "parallel",
-              pipelines: [["transcriber", "llm", "synthesizer"]],
-            },
-            task_config: {
-              hangup_after_silence: updates.hangupAfterSilence !== undefined ? updates.hangupAfterSilence : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.hangup_after_silence || 10),
-              incremental_delay: updates.incrementalDelay !== undefined ? updates.incrementalDelay : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.incremental_delay || 400),
-              number_of_words_for_interruption: updates.numberOfWordsForInterruption !== undefined ? updates.numberOfWordsForInterruption : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.number_of_words_for_interruption || 2),
-              hangup_after_LLMCall: updates.hangupAfterLLMCall !== undefined ? updates.hangupAfterLLMCall : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.hangup_after_LLMCall || false),
-              call_cancellation_prompt: updates.callCancellationPrompt !== undefined ? updates.callCancellationPrompt : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.call_cancellation_prompt || null),
-              backchanneling: updates.backchanneling !== undefined ? updates.backchanneling : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.backchanneling || false),
-              backchanneling_message_gap: updates.backchannelingMessageGap !== undefined ? updates.backchannelingMessageGap : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.backchanneling_message_gap || 5),
-              backchanneling_start_delay: updates.backchannelingStartDelay !== undefined ? updates.backchannelingStartDelay : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.backchanneling_start_delay || 5),
-              ambient_noise: updates.ambientNoise !== undefined ? updates.ambientNoise : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.ambient_noise || false),
-              ambient_noise_track: updates.ambientNoiseTrack || existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.ambient_noise_track || "office-ambience",
-              call_terminate: updates.maxDuration !== undefined ? updates.maxDuration : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.call_terminate || 90),
-              voicemail: updates.voicemail !== undefined ? updates.voicemail : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.voicemail || false),
-              inbound_limit: updates.inboundLimit !== undefined ? updates.inboundLimit : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.inbound_limit !== undefined ? existingAgentConfig.agent_config.tasks[0].task_config.inbound_limit : -1),
-              whitelist_phone_numbers: null, // Per API: null or array of E.164 phone numbers
-              disallow_unknown_numbers: updates.disallowUnknownNumbers !== undefined ? updates.disallowUnknownNumbers : (existingAgentConfig?.agent_config?.tasks?.[0]?.task_config?.disallow_unknown_numbers || false),
-            },
+    // Helper to get or create task
+    const getTask = () => {
+      if (!config.tasks || !Array.isArray(config.tasks) || config.tasks.length === 0) {
+        config.tasks = [{
+          task_type: "conversation",
+          tools_config: {
+            llm_agent: { llm_config: {} },
+            synthesizer: { provider_config: {} },
+            transcriber: {}
           },
-        ],
-        ...(ingestSourceConfig && { ingest_source_config: ingestSourceConfig }),
-      },
-      agent_prompts: {
-        task_1: {
-          system_prompt: systemPrompt,
-        },
-      },
+          task_config: {}
+        }];
+      }
+      return config.tasks[0];
     };
 
-    console.log('[Bolna] PUT request payload (full update):', JSON.stringify(fullConfig, null, 2));
-    console.log('[Bolna] Update payload size:', JSON.stringify(fullConfig).length, 'bytes');
+    const task = getTask();
+
+    // Update LLM
+    if (updates.model) {
+      if (!task.tools_config.llm_agent) task.tools_config.llm_agent = {};
+      if (!task.tools_config.llm_agent.llm_config) task.tools_config.llm_agent.llm_config = {};
+      task.tools_config.llm_agent.llm_config.model = updates.model;
+    }
+    if (updates.provider) {
+      if (!task.tools_config.llm_agent) task.tools_config.llm_agent = {};
+      if (!task.tools_config.llm_agent.llm_config) task.tools_config.llm_agent.llm_config = {};
+      task.tools_config.llm_agent.llm_config.provider = updates.provider;
+    }
+    if (updates.temperature !== undefined) task.tools_config.llm_agent.llm_config.temperature = updates.temperature;
+    if ((updates as any).maxTokens !== undefined) task.tools_config.llm_agent.llm_config.max_tokens = (updates as any).maxTokens;
+
+    // Get voiceId from updates
+    const updatesAny = updates as any;
+    // Update Voice
+    if (updatesAny.voiceProvider) {
+      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
+      task.tools_config.synthesizer.provider = updatesAny.voiceProvider;
+    }
+    if (updatesAny.voiceId) {
+      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
+      if (!task.tools_config.synthesizer.provider_config) task.tools_config.synthesizer.provider_config = {};
+      task.tools_config.synthesizer.provider_config.voice_id = updatesAny.voiceId;
+      // For ElevenLabs, voice name is also needed sometimes, try to set it if available or use ID
+      if (!task.tools_config.synthesizer.provider_config.voice) {
+        task.tools_config.synthesizer.provider_config.voice = updatesAny.voiceName || updatesAny.voiceId;
+      }
+    }
+    if (updates.language) {
+      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
+      if (!task.tools_config.synthesizer.provider_config) task.tools_config.synthesizer.provider_config = {};
+      task.tools_config.synthesizer.provider_config.language = updates.language;
+    }
+
+    // Update Transcriber settings if present in updates
+    if (updatesAny.transcriberLanguage) {
+      if (!task.tools_config.transcriber) task.tools_config.transcriber = {};
+      task.tools_config.transcriber.language = updatesAny.transcriberLanguage;
+    }
 
     try {
-      const response = await this.request<BolnaAgent>(`/v2/agent/${agentId}`, {
+      console.log(`[Bolna] Sending update for agent ${agentId}`);
+      return await this.request<BolnaAgent>(`/v2/agent/${agentId}`, {
         method: "PUT",
-        body: JSON.stringify(fullConfig),
+        body: JSON.stringify(payload),
       });
-      console.log('[Bolna] Agent updated successfully:', response);
-      return response;
-    } catch (error: any) {
-      console.error('[Bolna] Failed to update agent. Payload sent:', JSON.stringify(fullConfig, null, 2));
-      console.error('[Bolna] Error details:', error.response?.data || error.message);
+    } catch (error) {
+      console.error(`Failed to update Bolna agent ${agentId}:`, error);
       throw error;
     }
   }
@@ -1056,8 +977,8 @@ export class BolnaClient {
   ): Promise<BolnaAgent> {
     // Use agent's webhookUrl if provided in updates, otherwise use existing, otherwise fall back to env variable
     let webhookUrl: string | null = null;
-    if (updates.webhookUrl !== undefined) {
-      webhookUrl = this.normalizeWebhookUrl(updates.webhookUrl || null);
+    if ((updates as any).webhookUrl !== undefined) {
+      webhookUrl = this.normalizeWebhookUrl((updates as any).webhookUrl || null);
     } else if (existingAgentConfig?.agent_config?.webhook_url) {
       webhookUrl = this.normalizeWebhookUrl(existingAgentConfig.agent_config.webhook_url);
     } else if (process.env.PUBLIC_WEBHOOK_URL) {
@@ -1163,7 +1084,7 @@ export class BolnaClient {
           };
         }
 
-        config.agent_config!.synthesizer = synthesizerConfig;
+        (config.agent_config as any).synthesizer = synthesizerConfig;
       }
     }
 
@@ -1246,13 +1167,7 @@ export class BolnaClient {
     }
   }
 
-  async initiateCall(callData: BolnaCallRequest): Promise<BolnaCallResponse> {
-    this.ensureConfigured();
-    return await this.request<BolnaCallResponse>("/v1/calls", {
-      method: "POST",
-      body: JSON.stringify(callData),
-    });
-  }
+
 
   async getCallStatus(callId: string): Promise<any> {
     this.ensureConfigured();
@@ -1803,19 +1718,7 @@ export class BolnaClient {
   }
 
   // Enhanced call initiation with v2 features
-  async initiateCallV2(callData: {
-    agent_id: string;
-    recipient_phone_number: string;
-    from_phone_number?: string;
-    scheduled_at?: string;
-    user_data?: Record<string, any>;
-  }): Promise<any> {
-    this.ensureConfigured();
-    return await this.request("/call", {
-      method: "POST",
-      body: JSON.stringify(callData),
-    });
-  }
+
 
   // ============================================
   // BATCH API METHODS
@@ -1849,7 +1752,7 @@ export class BolnaClient {
 
     // Create form data for file upload
     const formData = new FormData();
-    const blob = new Blob([params.file], { type: 'text/csv' });
+    const blob = new Blob([params.file as any], { type: 'text/csv' });
     formData.append('file', blob, params.fileName);
     formData.append('agent_id', params.agent_id);
     formData.append('from_phone_number', params.from_phone_number);

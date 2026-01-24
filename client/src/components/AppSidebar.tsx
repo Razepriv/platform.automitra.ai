@@ -43,12 +43,25 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 
+interface Organization {
+  id: string;
+  name: string;
+  companyName?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+}
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { user } = useAuth();
-  const { data: organization } = useQuery({
+  const { data: organization } = useQuery<Organization>({
     queryKey: ["/api/organization"],
   });
+
+  // Create display name from firstName/lastName or email
+  const displayName = user?.firstName
+    ? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+    : user?.email?.split('@')[0] || 'User';
 
   const isActive = (url: string) => {
     // Exact match for home page
@@ -279,13 +292,13 @@ export function AppSidebar() {
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
-                    <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.username} />
+                    <AvatarImage src={user?.profileImageUrl || undefined} alt={displayName} />
                     <AvatarFallback className="rounded-lg">
-                      {user?.username?.charAt(0).toUpperCase() || "U"}
+                      {displayName.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">{user?.username || "User"}</span>
+                    <span className="truncate font-semibold">{displayName}</span>
                     <span className="truncate text-xs">{user?.email || "user@example.com"}</span>
                   </div>
                   <ChevronDown className="ml-auto size-4" />
@@ -300,13 +313,13 @@ export function AppSidebar() {
                 <DropdownMenuLabel className="p-0 font-normal">
                   <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                     <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.username} />
+                      <AvatarImage src={user?.profileImageUrl || undefined} alt={displayName} />
                       <AvatarFallback className="rounded-lg">
-                        {user?.username?.charAt(0).toUpperCase() || "U"}
+                        {displayName.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-semibold">{user?.username || "User"}</span>
+                      <span className="truncate font-semibold">{displayName}</span>
                       <span className="truncate text-xs">{user?.email || "user@example.com"}</span>
                     </div>
                   </div>

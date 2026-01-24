@@ -183,7 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const phoneNumber = await storage.getPhoneNumber(agent.assignedPhoneNumberId, user.organizationId);
                 if (phoneNumber && phoneNumber.phoneNumber) {
                   // Pass the actual phone number to Bolna with provider
-                  await bolnaClient.setupInboundCall(bolnaAgent.agent_id, phoneNumber.phoneNumber, phoneNumber.provider || "exotel");
+                  await bolnaClient.setupInboundCall(bolnaAgent.agent_id, phoneNumber.phoneNumber);
                   console.log(`Inbound call setup successful for agent ${agent.id} with number ${phoneNumber.phoneNumber}`);
                 }
               } catch (inboundError) {
@@ -421,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const phoneNumber = await storage.getPhoneNumber(agent.assignedPhoneNumberId, user.organizationId);
               if (phoneNumber && phoneNumber.phoneNumber) {
                 // Pass the actual phone number to Bolna with provider
-                await bolnaClient.setupInboundCall(bolnaAgent.agent_id, phoneNumber.phoneNumber, phoneNumber.provider || "exotel");
+                await bolnaClient.setupInboundCall(bolnaAgent.agent_id, phoneNumber.phoneNumber);
                 console.log(`Inbound call setup successful for agent ${agent.id} with number ${phoneNumber.phoneNumber}`);
               }
             } catch (inboundError) {
@@ -1531,7 +1531,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
   // Delete knowledge base
   app.delete('/api/knowledge-base/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const kb = await storage.getKnowledgeBase(req.params.id, req.user.organizationId);
+      const kb = await storage.getKnowledgeBaseItem(req.params.id, req.user.organizationId);
 
       if (!kb) {
         return res.status(404).json({ message: "Knowledge base not found" });
@@ -1593,7 +1593,7 @@ Transcript: ${transcript.substring(0, 2000)}`;
           let bolnaRagId = kb.bolnaKbId;
           if (!bolnaRagId) {
             // If no external ID, try to get from metadata
-            const metadata = kb.metadata || {};
+            const metadata = (kb.metadata || {}) as Record<string, any>;
             bolnaRagId = metadata.bolnaRagId;
           }
 
@@ -2014,7 +2014,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
           // Store with Bolna reference
           knowledgeData.bolnaKbId = bolnaKB.rag_id;
           (knowledgeData as any).metadata = {
-            ...knowledgeData.metadata,
+            ...(knowledgeData.metadata as object || {}),
             bolnaRagId: bolnaKB.rag_id,
             uploadedToBolna: true,
             uploadedAt: new Date().toISOString(),
@@ -2038,7 +2038,7 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
           console.error('[KB Create] Failed to upload to Bolna:', bolnaError);
           // Continue creating KB in platform even if Bolna upload fails
           (knowledgeData as any).metadata = {
-            ...knowledgeData.metadata,
+            ...(knowledgeData.metadata as object || {}),
             bolnaUploadError: (bolnaError as Error).message,
             bolnaUploadAttempted: true,
             uploadedToBolna: false,
@@ -2516,8 +2516,20 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         if (activeAgents.length === 0) {
           console.warn(`[Bulk Lead Upload] No active agents with Bolna IDs found`);
         } else {
-          // Use AI to match leads to agents
-          const assignments = await matchLeadsToAgents(createdLeads, activeAgents);
+          // Use AI to match leads to agents - map to expected format
+          const leadsForMatching = createdLeads.map(l => ({
+            id: l.id,
+            name: l.name,
+            company: l.company ?? undefined,
+            notes: l.notes ?? undefined
+          }));
+          const agentsForMatching = activeAgents.map(a => ({
+            id: a.id,
+            name: a.name,
+            description: a.description ?? undefined,
+            systemPrompt: a.systemPrompt ?? undefined
+          }));
+          const assignments = await matchLeadsToAgents(leadsForMatching, agentsForMatching);
 
           for (const lead of createdLeads) {
             const assignedAgentId = assignments[lead.id];
@@ -3233,8 +3245,20 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
         return res.status(400).json({ message: "No AI agents available for assignment" });
       }
 
-      // Use AI to match leads to agents
-      const assignments = await matchLeadsToAgents(unassignedLeads, agents);
+      // Use AI to match leads to agents - map to expected format
+      const leadsForMatching = unassignedLeads.map(l => ({
+        id: l.id,
+        name: l.name,
+        company: l.company ?? undefined,
+        notes: l.notes ?? undefined
+      }));
+      const agentsForMatching = agents.map(a => ({
+        id: a.id,
+        name: a.name,
+        description: a.description ?? undefined,
+        systemPrompt: a.systemPrompt ?? undefined
+      }));
+      const assignments = await matchLeadsToAgents(leadsForMatching, agentsForMatching);
       let assignedCount = 0;
 
       for (const lead of unassignedLeads) {
