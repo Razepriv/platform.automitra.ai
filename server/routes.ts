@@ -2878,18 +2878,47 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
               if (bolnaCall && (bolnaCall.call_id || bolnaCall.execution_id)) {
                 await storage.updateCall(call.id, user.organizationId, {
                   bolnaCallId: bolnaCall.call_id || bolnaCall.execution_id,
+                  status: 'initiated',
+                  metadata: {
+                    ...(call.metadata as object || {}),
+                    bolnaInitiationSuccess: true,
+                    bolnaResponse: bolnaCall
+                  }
                 });
                 console.log(`[Calls] Updated call ${call.id} with Bolna ID`);
               } else {
                 console.warn(`[Calls] Bolna response missing call_id/execution_id:`, bolnaCall);
+                await storage.updateCall(call.id, user.organizationId, {
+                  metadata: {
+                    ...(call.metadata as object || {}),
+                    bolnaInitiationError: "Response missing call_id/execution_id",
+                    bolnaResponse: bolnaCall
+                  }
+                });
               }
             } catch (err: any) {
               console.error(`[Calls] Failed to initiate Bolna call:`, err.message, err.response?.data);
+              await storage.updateCall(call.id, user.organizationId, {
+                metadata: {
+                  ...(call.metadata as object || {}),
+                  bolnaInitiationError: err.message,
+                  bolnaErrorDetails: err.response?.data
+                }
+              });
             }
 
 
           } else {
             console.warn(`[Calls] Cannot initiate call: Agent ${call.agentId} not found or not synced with Bolna`);
+            await storage.updateCall(call.id, user.organizationId, {
+              metadata: {
+                ...(call.metadata as object || {}),
+                bolnaInitiationError: "Agent not found or missing Bolna Agent ID",
+                agentId: call.agentId,
+                agentFound: !!agent,
+                bolnaAgentId: agent?.bolnaAgentId
+              }
+            });
           }
         } catch (initErr) {
           console.error(`[Calls] Failed to auto-initiate call ${call.id}:`, initErr);

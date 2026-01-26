@@ -1540,6 +1540,10 @@ MIT License - See [LICENSE](./LICENSE) file for details
 
 ## Changelog
 
+**[v1.1.2] - 2026-01-27**
+- **Debugging:** Persist call initiation errors to `call.metadata` for easier troubleshooting via UI.
+- **Reliability:** Enhanced error handling in auto-initiation logic.
+
 **[v1.1.1] - 2026-01-27**
 - **Knowledge Base:** Switched to `axios` for robust multipart uploads, fixing 500 errors during sync.
 - **Reliability:** Fixed variable scope in call initiation to prevent server crashes.
