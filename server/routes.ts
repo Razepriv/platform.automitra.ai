@@ -1984,8 +1984,21 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
 `;
 
           // Convert text to PDF buffer
+          let PDFDocument;
+          try {
+            const pdfkitModule = await import('pdfkit');
+            PDFDocument = pdfkitModule.default || pdfkitModule;
+          } catch (e) {
+            console.error('[KB Create] Failed to load pdfkit:', e);
+            throw new Error('PDF generation failed: pdfkit not found');
+          }
+
+          if (!PDFDocument) {
+            throw new Error('PDF generation failed: pdfkit constructor not found');
+          }
+
           // @ts-ignore
-          const PDFDocument = (await import('pdfkit')).default;
+          // const PDFDocument = (await import('pdfkit')).default;
           const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
             const doc = new PDFDocument();
             const chunks: Buffer[] = [];
@@ -2817,6 +2830,57 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       if (call.transcription) {
         const aiSummary = await generateAISummary(call.transcription);
         await storage.updateCall(call.id, user.organizationId, { aiSummary });
+      }
+
+      // Automatically initiate call if this is an outbound call with an agent
+      // This fixes the issue where "Call" button only created a record but didn't trigger the call
+      if (call.agentId && call.contactPhone && (call.direction === 'outbound' || !call.direction)) {
+        try {
+          console.log(`[Calls] Automatically initiating outbound call for ${call.id}`);
+
+          // Get Agent details to get Bolna Agent ID
+          const agent = await storage.getAIAgent(call.agentId, user.organizationId);
+
+          if (agent && agent.bolnaAgentId) {
+            // Determine allowed caller ID
+            let fromPhone = undefined;
+            if (agent.assignedPhoneNumberId) {
+              const assignedPhone = await storage.getPhoneNumber(agent.assignedPhoneNumberId, user.organizationId);
+              if (assignedPhone?.phoneNumber) {
+                fromPhone = assignedPhone.phoneNumber;
+              }
+            }
+
+            // Initiate call via Bolna
+            // Use the updated initiateCallV2 which now correctly uses POST /call
+            const bolnaCall = await bolnaClient.initiateCallV2({
+              agent_id: agent.bolnaAgentId,
+              recipient_phone_number: call.contactPhone,
+              from_phone_number: fromPhone,
+              user_data: {
+                callId: call.id,
+                contactName: call.contactName,
+                organizationId: user.organizationId,
+              }
+            });
+
+            // Update call with Bolna details
+            if (bolnaCall) {
+              await storage.updateCall(call.id, user.organizationId, {
+                bolnaCallId: bolnaCall.call_id || bolnaCall.execution_id,
+                status: 'initiated' // Confirm status is initiated
+              });
+              console.log(`[Calls] Bolna call initiated: ${bolnaCall.call_id}`);
+            }
+          } else {
+            console.warn(`[Calls] Cannot initiate call: Agent ${call.agentId} not found or not synced with Bolna`);
+          }
+        } catch (initErr) {
+          console.error(`[Calls] Failed to auto-initiate call ${call.id}:`, initErr);
+          // Don't fail the request, just log the error. The UI will show the call as created.
+          // Optionally update status to 'failed'
+          await storage.updateCall(call.id, user.organizationId, { status: 'failed' });
+        }
       }
 
       res.json(call);

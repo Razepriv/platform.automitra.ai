@@ -423,6 +423,10 @@ export class BolnaClient {
    * Initiate a call using Bolna API v2 (POST /agent/initiate)
    * This is the preferred method for initiating calls
    */
+  /**
+   * Initiate a call using Bolna API (POST /call)
+   * aligned with official documentation
+   */
   async initiateCallV2(params: {
     agent_id: string;
     recipient_phone_number: string;
@@ -431,40 +435,40 @@ export class BolnaClient {
     metadata?: any;
   }): Promise<{ call_id: string; execution_id?: string; status: string }> {
     this.ensureConfigured();
-    console.log(`[Bolna] Initiating V2 call for agent ${params.agent_id} to ${params.recipient_phone_number}`);
+    console.log(`[Bolna] Initiating available call for agent ${params.agent_id} to ${params.recipient_phone_number}`);
 
     try {
-      // Build request body
+      // Build request body per Bolna API docs (POST /call)
       const body: any = {
         agent_id: params.agent_id,
         recipient_phone_number: params.recipient_phone_number,
       };
 
+      // Map from_phone_number if present
       if (params.from_phone_number) {
-        body.recipient_data = {
-          ...body.recipient_data,
-          from_phone_number: params.from_phone_number
-        };
+        body.from_phone_number = params.from_phone_number;
       }
 
+      // Map user_data if present
       if (params.user_data) {
         body.user_data = params.user_data;
       }
 
-      // Also support legacy metadata if needed
-      if (params.metadata) {
-        body.metadata = params.metadata;
-      }
+      // Use scheduled_at if we ever need it, currently immediate
 
-      const response = await this.request<any>('/agent/initiate', {
+      const response = await this.request<any>('/call', {
         method: 'POST',
         body: JSON.stringify(body),
       });
 
-      console.log('[Bolna] Call initiated successfully (V2):', response);
+      console.log('[Bolna] Call initiated successfully (POST /call):', response);
+      // Map execution_id to call_id for consistency if needed, but return raw response
+      if (response.execution_id && !response.call_id) {
+        response.call_id = response.execution_id;
+      }
       return response;
     } catch (error) {
-      console.error('[Bolna] Error initiating call (V2):', error);
+      console.error('[Bolna] Error initiating call:', error);
       throw error;
     }
   }
@@ -993,8 +997,8 @@ export class BolnaClient {
     if (updates.name) {
       config.agent_config!.agent_name = updates.name;
     }
-    if (updates.firstMessage || updates.systemPrompt) {
-      config.agent_config!.agent_welcome_message = updates.firstMessage || updates.systemPrompt || undefined;
+    if (updates.firstMessage) {
+      config.agent_config!.agent_welcome_message = updates.firstMessage;
     }
 
     // Always update webhook_url to ensure it's set
