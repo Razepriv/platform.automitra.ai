@@ -1537,3 +1537,12 @@ MIT License - See [LICENSE](./LICENSE) file for details
 **Last Updated:** January 14, 2026  
 **Project Version:** 1.0.0  
 **Maintainer:** Megna Voice Development Team
+
+## Changelog
+
+**[v1.1.0] - 2026-01-27**
+- **Call Initiation:** Fixed POST /api/calls to correctly trigger Bolna API via POST /call.
+- **Agent Updates:** Fixed updateAgentPartial logic to correctly map system prompts.
+- **Knowledge Base:**
+  - Fixed 500 error by adding missing metadata column to database.
+  - Improved pdfkit dynamic import robustness.
