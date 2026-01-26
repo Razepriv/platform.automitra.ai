@@ -1540,6 +1540,11 @@ MIT License - See [LICENSE](./LICENSE) file for details
 
 ## Changelog
 
+**[v1.1.1] - 2026-01-27**
+- **Knowledge Base:** Switched to `axios` for robust multipart uploads, fixing 500 errors during sync.
+- **Reliability:** Fixed variable scope in call initiation to prevent server crashes.
+- **Debugging:** Added comprehensive logging for external API calls (Bolna).
+
 **[v1.1.0] - 2026-01-27**
 - **Call Initiation:** Fixed POST /api/calls to correctly trigger Bolna API via POST /call.
 - **Agent Updates:** Fixed updateAgentPartial logic to correctly map system prompts.

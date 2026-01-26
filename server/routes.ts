@@ -2139,7 +2139,15 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
       const title = kb.title || 'Untitled Knowledge Base';
 
       // Convert to PDF
-      const PDFDocument = (await import('pdfkit')).default;
+      let PDFDocument;
+      try {
+        const pdfkitModule = await import('pdfkit');
+        PDFDocument = pdfkitModule.default || pdfkitModule;
+      } catch (e) {
+        console.error('[KB Sync] Failed to load pdfkit:', e);
+        throw new Error('PDF generation failed: pdfkit not found');
+      }
+
       const pdfBuffer: Buffer = await new Promise((resolve, reject) => {
         const doc = new PDFDocument();
         const chunks: Buffer[] = [];
@@ -2853,25 +2861,33 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
 
             // Initiate call via Bolna
             // Use the updated initiateCallV2 which now correctly uses POST /call
-            const bolnaCall = await bolnaClient.initiateCallV2({
-              agent_id: agent.bolnaAgentId,
-              recipient_phone_number: call.contactPhone,
-              from_phone_number: fromPhone,
-              user_data: {
-                callId: call.id,
-                contactName: call.contactName,
-                organizationId: user.organizationId,
-              }
-            });
-
-            // Update call with Bolna details
-            if (bolnaCall) {
-              await storage.updateCall(call.id, user.organizationId, {
-                bolnaCallId: bolnaCall.call_id || bolnaCall.execution_id,
-                status: 'initiated' // Confirm status is initiated
+            try {
+              const bolnaCall = await bolnaClient.initiateCallV2({
+                agent_id: agent.bolnaAgentId,
+                recipient_phone_number: call.contactPhone,
+                from_phone_number: fromPhone,
+                user_data: {
+                  callId: call.id,
+                  contactName: call.contactName,
+                  organizationId: user.organizationId,
+                }
               });
-              console.log(`[Calls] Bolna call initiated: ${bolnaCall.call_id}`);
+
+              console.log(`[Calls] Bolna initiateCallV2 success. Result:`, JSON.stringify(bolnaCall, null, 2));
+
+              if (bolnaCall && (bolnaCall.call_id || bolnaCall.execution_id)) {
+                await storage.updateCall(call.id, user.organizationId, {
+                  bolnaCallId: bolnaCall.call_id || bolnaCall.execution_id,
+                });
+                console.log(`[Calls] Updated call ${call.id} with Bolna ID`);
+              } else {
+                console.warn(`[Calls] Bolna response missing call_id/execution_id:`, bolnaCall);
+              }
+            } catch (err: any) {
+              console.error(`[Calls] Failed to initiate Bolna call:`, err.message, err.response?.data);
             }
+
+
           } else {
             console.warn(`[Calls] Cannot initiate call: Agent ${call.agentId} not found or not synced with Bolna`);
           }

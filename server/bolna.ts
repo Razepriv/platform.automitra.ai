@@ -435,6 +435,8 @@ export class BolnaClient {
     metadata?: any;
   }): Promise<{ call_id: string; execution_id?: string; status: string }> {
     this.ensureConfigured();
+    console.log(`[Bolna] initiateCallV2 called with params:`, JSON.stringify(params, null, 2));
+
     console.log(`[Bolna] Initiating available call for agent ${params.agent_id} to ${params.recipient_phone_number}`);
 
     try {
@@ -824,7 +826,7 @@ export class BolnaClient {
 
     // For now, let's use the logic that if bolnaConfig is provided in updates, use that full config
     if ((updates as any).bolnaConfig) {
-      console.log(`[Bolna] Full update for agent ${agentId}`);
+      console.log(`[Bolna] Full update for agent ${agentId} (bolnaConfig present)`);
       return this.updateAgentFull(agentId, updates, (updates as any).bolnaConfig);
     }
 
@@ -832,7 +834,7 @@ export class BolnaClient {
     // BUT Bolna API typically favors PUT for configuration changes. 
     // To safe, we'll fetch the existing config (if not provided), merge, and send a full update.
 
-    console.log(`[Bolna] Update requested for agent ${agentId}`, updates);
+    console.log(`[Bolna] Update requested for agent ${agentId}`, JSON.stringify(updates, null, 2));
 
     let currentConfig = existingAgentConfig;
     if (!currentConfig) {
@@ -1405,7 +1407,7 @@ export class BolnaClient {
   }): Promise<BolnaKnowledgeBase> {
     this.ensureConfigured();
 
-    // Use form-data package for Node.js FormData support
+    // Use form-data package
     const FormData = (await import('form-data')).default;
     const formData = new FormData();
 
@@ -1419,27 +1421,35 @@ export class BolnaClient {
       // Handle multer file object
       formData.append('file', file.buffer, file.originalname || options?.fileName || 'file');
     } else {
+      console.error('[Bolna] Invalid file type for KB creation:', typeof file);
       throw new Error('Invalid file type. Expected Buffer or multer file object.');
     }
 
     const url = `${this.baseUrl}/knowledgebase`;
-    const headers: Record<string, string> = {
-      "Authorization": `Bearer ${this.apiKey}`,
-      ...formData.getHeaders(),
-    };
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: formData as any,
-    });
+    // Switch to axios for better multipart/form-data handling in Node environment
+    const axios = (await import('axios')).default;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Bolna API error (${response.status}): ${errorText}`);
+    try {
+      console.log(`[Bolna] Uploading KB to ${url} with headers:`, {
+        ...formData.getHeaders(),
+        Authorization: 'Bearer [REDACTED]'
+      });
+
+      const response = await axios.post(url, formData, {
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          ...formData.getHeaders(),
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[Bolna] KB Creation Failed:', error.response?.data || error.message);
+      throw new Error(`Bolna API error: ${JSON.stringify(error.response?.data || error.message)}`);
     }
-
-    return await response.json();
   }
 
   /**
