@@ -70,6 +70,7 @@ export interface IStorage {
   getPhoneNumber(id: string, organizationId: string): Promise<PhoneNumber | undefined>;
   createPhoneNumber(phone: InsertPhoneNumber): Promise<PhoneNumber>;
   updatePhoneNumber(id: string, organizationId: string, phone: Partial<InsertPhoneNumber>): Promise<PhoneNumber | undefined>;
+  getPhoneNumbers(organizationId: string): Promise<PhoneNumber[]>;
   getLeads(organizationId: string): Promise<Lead[]>;
   getLead(id: string, organizationId: string): Promise<Lead | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;

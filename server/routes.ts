@@ -2859,6 +2859,18 @@ ${knowledgeData.tags?.length ? `\nTags: ${knowledgeData.tags.join(', ')}` : ''}
               }
             }
 
+            // Fallback: If no specific number assigned to agent, pick the first active number for the org
+            if (!fromPhone) {
+              const numbers = await storage.getPhoneNumbers(user.organizationId);
+              const fallback = numbers.find(n => n.status === 'active');
+              if (fallback) {
+                fromPhone = fallback.phoneNumber;
+                console.log(`[Calls] Using fallback caller ID: ${fromPhone} for agent ${agent.id}`);
+              } else {
+                console.warn(`[Calls] NO active phone number found for organization ${user.organizationId}. Bolna call might fail if agent is not hosted.`);
+              }
+            }
+
             // Initiate call via Bolna
             // Use the updated initiateCallV2 which now correctly uses POST /call
             try {

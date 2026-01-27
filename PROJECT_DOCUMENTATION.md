@@ -1540,6 +1540,9 @@ MIT License - See [LICENSE](./LICENSE) file for details
 
 ## Changelog
 
+**[v1.1.3] - 2026-01-27**
+- **Feature:** Added automatic Caller ID fallback. If an agent has no assigned number, the system now automatically uses the organization's first active phone number.
+
 **[v1.1.2] - 2026-01-27**
 - **Debugging:** Persist call initiation errors to `call.metadata` for easier troubleshooting via UI.
 - **Reliability:** Enhanced error handling in auto-initiation logic.
