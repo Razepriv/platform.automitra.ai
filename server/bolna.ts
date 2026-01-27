@@ -505,10 +505,12 @@ export class BolnaClient {
       const config = (agentData as any).bolnaConfig as BolnaAgentConfigV2;
 
       // Ensure webhook URL is set if not provided
-      if (!config.agent_config.webhook_url && process.env.PUBLIC_WEBHOOK_URL) {
-        const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+      if (!config.agent_config.webhook_url) {
+        // Use env var or default to platform.automitra.ai
+        const envUrl = process.env.PUBLIC_WEBHOOK_URL || "https://platform.automitra.ai";
+        const baseUrl = this.normalizeWebhookUrl(envUrl);
         config.agent_config.webhook_url = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
-      } else if (config.agent_config.webhook_url) {
+      } else {
         // Normalize existing webhook URL
         config.agent_config.webhook_url = this.normalizeWebhookUrl(config.agent_config.webhook_url);
       }
@@ -643,12 +645,13 @@ export class BolnaClient {
     }
 
     // Build minimal required config for Bolna v2 API
-    // Use agent's webhookUrl if provided, otherwise fall back to env variable
+    // Use agent's webhookUrl if provided, otherwise fall back to env variable or default
     let webhookUrl: string | null = null;
     if ((agentData as any).webhookUrl) {
       webhookUrl = this.normalizeWebhookUrl((agentData as any).webhookUrl);
-    } else if (process.env.PUBLIC_WEBHOOK_URL) {
-      const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+    } else {
+      const envUrl = process.env.PUBLIC_WEBHOOK_URL || "https://platform.automitra.ai";
+      const baseUrl = this.normalizeWebhookUrl(envUrl);
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
     }
 
@@ -663,6 +666,28 @@ export class BolnaClient {
 
     // Construct API tools if call forwarding is enabled
     let apiTools = null;
+    if ((agentData as any).callForwardingEnabled && (agentData as any).callForwardingNumber) {
+      console.log('[Bolna] Call forwarding enabled, adding transferCall tool');
+      apiTools = {
+        "tools": [{
+          "type": "function",
+          "function": {
+            "name": "transferCall",
+            "description": "Transfer the call to a human agent or another department",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "description": "Reason for transferring the call"
+                }
+              },
+              "required": ["reason"]
+            }
+          }
+        }]
+      };
+    }
 
     // Build LLM config - support knowledge base if knowledgeBaseIds provided
     let llmAgentConfig: any = {
@@ -803,8 +828,6 @@ export class BolnaClient {
       console.error('[Bolna] Error details:', error.response?.data || error.message);
       throw error;
     }
-
-
   }
 
   /**
@@ -869,106 +892,210 @@ export class BolnaClient {
   ): Promise<BolnaAgent> {
     this.ensureConfigured();
 
-    // Start with existing config or a skeleton
-    let payload = existingAgentConfig || { agent_config: {} };
+    console.log(`[Bolna] Performing FULL update (PUT) for agent ${agentId}`, JSON.stringify(updates, null, 2));
 
-    // If the existing config has the wrapper 'agent_config', use it, otherwise assume top level is agent_config
-    // The API expects { agent_config: { ... } }
+    // 1. Extract base config from existing (if available) or create skeleton
+    // The existing config from API might return { agent_config: {...} } or just the config object
+    // We need to adhere strictly to V2 structure: { agent_config: {...}, agent_prompts: {...} }
 
-    // Safety check on structure
-    if (!payload.agent_config) {
-      // If the payload itself looks like an agent config (has tasks or agent_name at top level), wrap it
-      if (payload.agent_name || payload.tasks) {
-        payload = { agent_config: payload };
-      } else {
-        payload = { agent_config: {} };
+    let baseAgentConfig: any = {};
+    let baseAgentPrompts: any = {};
+
+    // Helper to safely extract agent_config
+    if (existingAgentConfig) {
+      if (existingAgentConfig.agent_config) {
+        baseAgentConfig = JSON.parse(JSON.stringify(existingAgentConfig.agent_config));
+      } else if (existingAgentConfig.agent_name || existingAgentConfig.tasks) {
+        // existingAgentConfig IS the agent_config
+        baseAgentConfig = JSON.parse(JSON.stringify(existingAgentConfig));
+      }
+
+      if (existingAgentConfig.agent_prompts) {
+        baseAgentPrompts = JSON.parse(JSON.stringify(existingAgentConfig.agent_prompts));
       }
     }
 
-    const config = payload.agent_config;
+    // Ensure basics exist in base config
+    if (!baseAgentConfig.tasks || !Array.isArray(baseAgentConfig.tasks) || baseAgentConfig.tasks.length === 0) {
+      // Fallback skeleton if tasks missing
+      baseAgentConfig.tasks = [{
+        task_type: "conversation",
+        tools_config: {
+          llm_agent: { llm_config: {} },
+          synthesizer: { provider_config: {} },
+          transcriber: {}
+        },
+        task_config: {}
+      }];
+    }
+    const task = baseAgentConfig.tasks[0]; // Primary task
 
-    // Apply updates
-    if (updates.name) config.agent_name = updates.name;
-    if (updates.firstMessage) config.agent_welcome_message = updates.firstMessage;
+    // 2. Apply Updates to Base Config
+    if (updates.name) baseAgentConfig.agent_name = updates.name;
+    if (updates.firstMessage) baseAgentConfig.agent_welcome_message = updates.firstMessage;
 
-    // Use agent's webhookUrl if provided in updates, otherwise use existing, otherwise fall back to env variable
+    // Webhook URL
     let webhookUrl: string | null = null;
     if ((updates as any).webhookUrl !== undefined) {
       webhookUrl = this.normalizeWebhookUrl((updates as any).webhookUrl || null);
-    } else if (existingAgentConfig?.agent_config?.webhook_url) {
-      webhookUrl = this.normalizeWebhookUrl(existingAgentConfig.agent_config.webhook_url);
-    } else if (process.env.PUBLIC_WEBHOOK_URL) {
-      const baseUrl = this.normalizeWebhookUrl(process.env.PUBLIC_WEBHOOK_URL);
+    } else if (baseAgentConfig.webhook_url) {
+      webhookUrl = this.normalizeWebhookUrl(baseAgentConfig.webhook_url);
+    } else {
+      const envUrl = process.env.PUBLIC_WEBHOOK_URL || "https://platform.automitra.ai";
+      const baseUrl = this.normalizeWebhookUrl(envUrl);
       webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/bolna/call-status` : null;
     }
-    config.webhook_url = webhookUrl;
+    baseAgentConfig.webhook_url = webhookUrl;
 
-    // Helper to get or create task
-    const getTask = () => {
-      if (!config.tasks || !Array.isArray(config.tasks) || config.tasks.length === 0) {
-        config.tasks = [{
-          task_type: "conversation",
-          tools_config: {
-            llm_agent: { llm_config: {} },
-            synthesizer: { provider_config: {} },
-            transcriber: {}
-          },
-          task_config: {}
-        }];
+    // Update LLM Config
+    const llmConfig = task.tools_config?.llm_agent?.llm_config || {};
+    if (updates.model) llmConfig.model = updates.model;
+    if (updates.provider) llmConfig.provider = updates.provider;
+    if (updates.temperature !== undefined) llmConfig.temperature = updates.temperature;
+    if ((updates as any).maxTokens !== undefined) llmConfig.max_tokens = (updates as any).maxTokens;
+
+    // Ensure nested objects exist
+    if (!task.tools_config) task.tools_config = {};
+    if (!task.tools_config.llm_agent) task.tools_config.llm_agent = {};
+    task.tools_config.llm_agent.llm_config = llmConfig;
+
+    // Update Synthesizer (Voice)
+    const updatesAny = updates as any;
+    if (updatesAny.voiceId || updatesAny.voiceProvider) {
+      let mainProvider = updatesAny.voiceProvider ||
+        task.tools_config?.synthesizer?.provider ||
+        "elevenlabs";
+
+      if (mainProvider === 'all') mainProvider = "elevenlabs";
+
+      const voiceId = updatesAny.voiceId || task.tools_config?.synthesizer?.provider_config?.voice_id;
+      // Voice name might be in voiceName, or we use voiceId as fallback
+      const voiceName = updatesAny.voiceName ||
+        task.tools_config?.synthesizer?.provider_config?.voice ||
+        voiceId;
+
+      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
+
+      task.tools_config.synthesizer.provider = mainProvider;
+
+      // Provider specific config
+      const providerConfig = task.tools_config.synthesizer.provider_config || {};
+
+      if (mainProvider === "elevenlabs") {
+        providerConfig.voice = voiceName;
+        providerConfig.voice_id = voiceId;
+        providerConfig.model = "eleven_turbo_v2_5";
+        providerConfig.sampling_rate = "16000";
+      } else if (mainProvider === "polly") {
+        providerConfig.voice = voiceId;
+        providerConfig.engine = "generative";
+        providerConfig.sampling_rate = "8000";
+      } else {
+        providerConfig.voice = voiceId;
       }
-      return config.tasks[0];
+
+      if (updates.language) {
+        providerConfig.language = updates.language;
+      }
+
+      task.tools_config.synthesizer.provider_config = providerConfig;
+    } else if (updates.language) {
+      // Just updating language
+      if (task.tools_config?.synthesizer?.provider_config) {
+        task.tools_config.synthesizer.provider_config.language = updates.language;
+      }
+    }
+
+    // 3. Handle System Prompts & Call Forwarding
+    let finalSystemPrompt = updates.systemPrompt ||
+      baseAgentPrompts.task_1?.system_prompt ||
+      "You are a helpful AI voice assistant.";
+
+    // Check if call forwarding enabled (either in updates or potentially implicitly if not disabled)
+    // We rely on updates having the flags if they are being changed. 
+    // If not in updates, we should technically check the DB, but here we process the updates object.
+    // However, if needsFullUpdate is true, it likely means these changed.
+
+    // Note: The logic in createAgent appends the instruction. 
+    // To avoid duplication, we should check if it's already there or clean it. 
+    // But simplest is to just append if enabled.
+
+    // Check if call forwarding settings are in updates
+    const cfEnabled = updatesAny.callForwardingEnabled;
+    const cfNumber = updatesAny.callForwardingNumber;
+
+    if (cfEnabled && cfNumber) {
+      // Append instruction if not already present (basic check)
+      if (!finalSystemPrompt.includes("transferCall")) {
+        finalSystemPrompt += `\n\nIf the user asks to speak to a human or if you cannot help them, use the transferCall tool to transfer the call to ${cfNumber}.`;
+      }
+
+      // Add tool definition
+      const transferTool = {
+        "type": "function",
+        "function": {
+          "name": "transferCall",
+          "description": "Transfer the call to a human agent or another department",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "description": "Reason for transferring the call"
+              }
+            },
+            "required": ["reason"]
+          }
+        }
+      };
+
+      // Add to api_tools
+      if (!task.tools_config.api_tools) {
+        task.tools_config.api_tools = { tools: [] };
+      }
+      // Ensure tools array exists
+      if (!task.tools_config.api_tools.tools) {
+        task.tools_config.api_tools.tools = [];
+      }
+
+      // Filter out existing transferCall tool to avoid duplicates, then add
+      task.tools_config.api_tools.tools = task.tools_config.api_tools.tools.filter(
+        (t: any) => t.function?.name !== 'transferCall'
+      );
+      task.tools_config.api_tools.tools.push(transferTool);
+
+    } else if (cfEnabled === false) {
+      // explicit disable, might want to remove tool? 
+      // For now, if disabled, we just don't add the prompt instruction/tool.
+      // If we are editing an existing agent, we might need to strip the tool/prompt.
+      // This is complex without full parsing. 
+      // Re-creating the prompt without the appendix is safe if we assume we constructed it.
+      if (task.tools_config.api_tools?.tools) {
+        task.tools_config.api_tools.tools = task.tools_config.api_tools.tools.filter(
+          (t: any) => t.function?.name !== 'transferCall'
+        );
+      }
+    }
+
+    // 4. Construct Final Payload
+    const request: BolnaAgentRequestV2 = {
+      agent_config: baseAgentConfig,
+      agent_prompts: {
+        task_1: {
+          system_prompt: finalSystemPrompt
+        }
+      }
     };
 
-    const task = getTask();
-
-    // Update LLM
-    if (updates.model) {
-      if (!task.tools_config.llm_agent) task.tools_config.llm_agent = {};
-      if (!task.tools_config.llm_agent.llm_config) task.tools_config.llm_agent.llm_config = {};
-      task.tools_config.llm_agent.llm_config.model = updates.model;
-    }
-    if (updates.provider) {
-      if (!task.tools_config.llm_agent) task.tools_config.llm_agent = {};
-      if (!task.tools_config.llm_agent.llm_config) task.tools_config.llm_agent.llm_config = {};
-      task.tools_config.llm_agent.llm_config.provider = updates.provider;
-    }
-    if (updates.temperature !== undefined) task.tools_config.llm_agent.llm_config.temperature = updates.temperature;
-    if ((updates as any).maxTokens !== undefined) task.tools_config.llm_agent.llm_config.max_tokens = (updates as any).maxTokens;
-
-    // Get voiceId from updates
-    const updatesAny = updates as any;
-    // Update Voice
-    if (updatesAny.voiceProvider) {
-      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
-      task.tools_config.synthesizer.provider = updatesAny.voiceProvider;
-    }
-    if (updatesAny.voiceId) {
-      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
-      if (!task.tools_config.synthesizer.provider_config) task.tools_config.synthesizer.provider_config = {};
-      task.tools_config.synthesizer.provider_config.voice_id = updatesAny.voiceId;
-      // For ElevenLabs, voice name is also needed sometimes, try to set it if available or use ID
-      if (!task.tools_config.synthesizer.provider_config.voice) {
-        task.tools_config.synthesizer.provider_config.voice = updatesAny.voiceName || updatesAny.voiceId;
-      }
-    }
-    if (updates.language) {
-      if (!task.tools_config.synthesizer) task.tools_config.synthesizer = {};
-      if (!task.tools_config.synthesizer.provider_config) task.tools_config.synthesizer.provider_config = {};
-      task.tools_config.synthesizer.provider_config.language = updates.language;
-    }
-
-    // Update Transcriber settings if present in updates
-    if (updatesAny.transcriberLanguage) {
-      if (!task.tools_config.transcriber) task.tools_config.transcriber = {};
-      task.tools_config.transcriber.language = updatesAny.transcriberLanguage;
-    }
+    console.log('[Bolna] Sending FULL update payload:', JSON.stringify(request, null, 2));
 
     try {
-      console.log(`[Bolna] Sending update for agent ${agentId}`);
-      return await this.request<BolnaAgent>(`/v2/agent/${agentId}`, {
+      const response = await this.request<BolnaAgent>(`/v2/agent/${agentId}`, {
         method: "PUT",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(request),
       });
+      console.log('[Bolna] Agent updated successfully (PUT):', response);
+      return response;
     } catch (error) {
       console.error(`Failed to update Bolna agent ${agentId}:`, error);
       throw error;
